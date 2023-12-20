@@ -1,0 +1,4 @@
+APScheduler
+bilibili-api-python
+edge-tts
+pynput

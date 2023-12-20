@@ -1,0 +1,7 @@
+pandas
+numpy
+datasets
+transformers
+evaluate
+sentencepiece
+gradio

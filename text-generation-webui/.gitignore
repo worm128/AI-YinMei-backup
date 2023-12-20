@@ -1,0 +1,49 @@
+# /cache
+# /characters
+# /css
+# /extensions
+# /grammars
+# /installer_files
+# /logs
+# /loras
+# /models
+# /presets
+# /prompts
+# /repositories
+# /softprompts
+# /torch-dumps
+# /training/datasets
+
+# /CMD_FLAGS.txt
+# /img_bot*
+# /img_me*
+# /models/config-user.yaml
+# /notification.mp3
+# /settings*.json
+# /settings*.yaml
+
+# .chroma
+# .DS_Store
+# .eslintrc.js
+# .idea
+# .venv
+# venv
+# .envrc
+# .direnv
+# .vscode
+# *.bak
+# *.ipynb
+# *.log
+# *pycache*
+# cert.pem
+# key.pem
+# package.json
+# package-lock.json
+# Thumbs.db
+# wandb
+
+# # ignore user docker config and top level links to docker files
+# /docker-compose.yaml
+# /docker-compose.yml
+# /Dockerfile
+# .env

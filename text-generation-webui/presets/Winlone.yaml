@@ -1,0 +1,5 @@
+temperature: 0.5
+top_p: 0.9
+top_k: 60
+repetition_penalty: 1.15
+guidance_scale: 1.5

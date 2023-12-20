@@ -1,0 +1,1 @@
+python server.py --trust-remote-code --listen-host 0.0.0.0 --listen-port 7866 --listen  --api --api-port 5000 --model chatglm2-6b --load-in-8bit --bf16
