@@ -1,9 +1,8 @@
-import argparse
+# b站AI直播对接本地语言模型
 import datetime
 import queue
 import subprocess
 import threading
-import torch
 import os
 import time
 
@@ -25,9 +24,10 @@ QuestionList = queue.Queue(10)  # 定义问题 用户名 回复 播放列表 四
 QuestionName = queue.Queue(10)
 AnswerList = queue.Queue()
 MpvList = queue.Queue()
+EmoteList = queue.Queue()
 LogsList = queue.Queue()
 history = []
-is_ai_ready = True  # 定义chatglm是否转换完成标志
+is_ai_ready = True  # 定义ai回复是否转换完成标志
 is_tts_ready = True  # 定义语音是否生成完成标志
 is_mpv_ready = True  # 定义是否播放完成标志
 AudioCount = 0
@@ -36,8 +36,8 @@ history_count = 2  # 定义最大对话记忆轮数,请注意这个数值不包�
 enable_role = False  # 是否启用扮演模式
 # b站直播身份验证：实例化 Credential 类
 cred = Credential(
-    sessdata="",
-    buvid3="",
+    sessdata="b4981a9e,1718634852,60ad3*c2CjDQHDlJG3xO0thsuTcFnNSR8V_ldwpuAcYNHO_RqXl9EuDWwz-_vWYmI6hDhvO3q_kSVmtRREcwS3I2aW9VRVlOamhJcEVTTUtfT0paR2pnNHVSYjZCS09meUlqTzVwVFltT1V2OXRmdHNsNmZjMHNweEszdnNGYTR0ZHBwVjlEaGtveGg1czF3IIEC",
+    buvid3="0A13475A-402F-CB81-5E03-E1E992C5FF7C86303infoc",
 )
 
 # AI基础模型路径
@@ -230,13 +230,21 @@ def tts_generate():
     )  # 执行命令行指令
     begin_name = response.find("回复")
     end_name = response.find("：")
-    name = response[begin_name + 2 : end_name]
-    print(f"\033[32mSystem>>\033[0m对[{name}]的回复已成功转换为语音并缓存为output{AudioCount}.mp3")
-
-    # 表情加入:使用键盘控制VTube
-    emote_thread = threading.Thread(target=emote_show(response))
-    emote_thread.start()
-
+    contain = response.find("来到吟美的直播")
+    if contain > 0:
+        # 欢迎语
+        print(
+            f"\033[32mSystem>>\033[0m对[{response}]的回复已成功转换为语音并缓存为output{AudioCount}.mp3"
+        )
+        # 表情加入:使用键盘控制VTube
+        EmoteList.put(f"{response}")
+    else:
+        # 回复语
+        name = response[begin_name + 2 : end_name]
+        print(f"\033[32mSystem>>\033[0m对[{name}]的回复已成功转换为语音并缓存为output{AudioCount}.mp3")
+        # 表情加入:使用键盘控制VTube
+        emote = response[end_name : len(response)]
+        EmoteList.put(f"{emote}")
     # 加入音频播放列表
     MpvList.put(AudioCount)
     AudioCount += 1
@@ -253,25 +261,25 @@ def emote_show(response):
     )
     emote_thread1.start()
     # =========== 招呼 ==============
-    text = ["你好", "在吗", "干嘛", "名字", "啊", "嗯", "欢迎"]
+    text = ["你好", "在吗", "干嘛", "名字", "欢迎"]
     emote_thread2 = threading.Thread(
         target=emote_do(text, response, keyboard, 0.2, Key.f2)
     )
     emote_thread2.start()
     # =========== 生气 ==============
-    text = ["生气", "不理你", "骂", "臭", "打死", "可恶", "白痴"]
+    text = ["生气", "不理你", "骂", "臭", "打死", "可恶", "白痴", "忘记"]
     emote_thread3 = threading.Thread(
         target=emote_do(text, response, keyboard, 0.2, Key.f3)
     )
     emote_thread3.start()
     # =========== 尴尬 ==============
-    text = ["尴尬", "无聊", "无奈", "傻子", "郁闷"]
+    text = ["尴尬", "无聊", "无奈", "傻子", "郁闷", "龟蛋"]
     emote_thread4 = threading.Thread(
         target=emote_do(text, response, keyboard, 0.2, Key.f4)
     )
     emote_thread4.start()
     # =========== 认同 ==============
-    text = ["认同", "点头", "啊", "嗯", "哦"]
+    text = ["认同", "点头", "嗯", "哦", "女仆"]
     emote_thread5 = threading.Thread(
         target=emote_do(text, response, keyboard, 0.2, Key.f5)
     )
@@ -281,11 +289,12 @@ def emote_show(response):
 def emote_do(text, response, keyboard, startTime, key):
     num = is_array_contain_string(text, response)
     if num > 0:
-        start = num * startTime
+        start = round(num * startTime, 2)
         time.sleep(start)
         keyboard.press(key)
         time.sleep(1)
         keyboard.release(key)
+        print(f"{response}:输出表情({start}){key}")
 
 
 def is_array_contain_string(string_array, target_string):
@@ -320,6 +329,12 @@ def mpv_read():
     while not MpvList.empty():
         temp1 = MpvList.get()
         current_mpvlist_count = MpvList.qsize()
+
+        # 表情加入:使用键盘控制VTube
+        response = EmoteList.get()
+        emote_thread = threading.Thread(target=emote_show(response))
+        emote_thread.start()
+
         print(
             f"\033[32mSystem>>\033[0m开始播放output{temp1}.mp3，当前待播语音数：{current_mpvlist_count}"
         )
