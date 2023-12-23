@@ -161,16 +161,18 @@ def ai_response():
 
 
 def web_search(query):
+    content = ""
     with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
         for r in ddgs.text(
             query,
             region="cn-zh",
             timelimit="d",
             backend="api",
-            max_results=1,
+            max_results=2,
         ):
             print("搜索内容：" + r["body"])
-            return r["body"]
+            content = content + r["body"]
+    return content
 
 
 def check_answer():

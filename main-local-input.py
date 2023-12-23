@@ -1,13 +1,16 @@
-# b站AI直播对接本地语言模型
+import argparse
 import datetime
 import queue
 import subprocess
 import threading
+import torch
 import os
 import time
 
 from peft import PeftModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.blocking import BlockingScheduler
+
 from bilibili_api import live, sync, Credential
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 from pynput.keyboard import Key, Controller
@@ -15,9 +18,9 @@ from duckduckgo_search import DDGS
 
 print("=====================================================================")
 print("开始启动人工智能吟美！")
-print("当前AI使用最新ChatGLM3引擎开发")
-print("ChatGLM3-6B：https://github.com/THUDM/ChatGLM3-6B")
-print("开发作者 by Winlone")
+print("组成功能：LLM大语言模型+bilibili直播对接+TTS微软语音合成+MPV语音播放+VTube Studio人物模型+pynput表情控制")
+print("源码地址：https://github.com/worm128/ai-yinmei")
+print("开发者：Winlone")
 print("=====================================================================\n")
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
@@ -25,7 +28,6 @@ QuestionList = queue.Queue(10)  # 定义问题 用户名 回复 播放列表 四
 QuestionName = queue.Queue(10)
 AnswerList = queue.Queue()
 MpvList = queue.Queue()
-EmoteList = queue.Queue()
 LogsList = queue.Queue()
 history = []
 is_ai_ready = True  # 定义ai回复是否转换完成标志
@@ -35,11 +37,6 @@ AudioCount = 0
 enable_history = False  # 是否启用记忆
 history_count = 2  # 定义最大对话记忆轮数,请注意这个数值不包括扮演设置消耗的轮数，只有当enable_history为True时生效
 enable_role = False  # 是否启用扮演模式
-# b站直播身份验证：实例化 Credential 类
-cred = Credential(
-    sessdata="b4981a9e,1718634852,60ad3*c2CjDQHDlJG3xO0thsuTcFnNSR8V_ldwpuAcYNHO_RqXl9EuDWwz-_vWYmI6hDhvO3q_kSVmtRREcwS3I2aW9VRVlOamhJcEVTTUtfT0paR2pnNHVSYjZCS09meUlqTzVwVFltT1V2OXRmdHNsNmZjMHNweEszdnNGYTR0ZHBwVjlEaGtveGg1czF3IIEC",
-    buvid3="0A13475A-402F-CB81-5E03-E1E992C5FF7C86303infoc",
-)
 
 # AI基础模型路径
 model_path = "ChatGLM2/THUDM/chatglm2-6b"
@@ -53,6 +50,14 @@ def initialize():
     global history_count  # 定义最大对话记忆轮数,请注意这个数值不包括扮演设置消耗的轮数，只有当enable_history为True时生效
     global enable_role  # 是否启用扮演模式
 
+    # parser = argparse.ArgumentParser(description='AI-YinMei-ChatGLM3')
+    # parser.add_argument('-m', '--memory', help='启用会话记忆', action='store_true')  # 默认为False
+    # parser.add_argument('-c', '--count', type=int, help='设定记忆轮数，只在启用会话记忆后有效，不指定默认为4', default='4')
+    # args = parser.parse_args()
+    # parser.add_argument('-r', '--role', help='启用扮演模式', action='store_true')
+    # enable_history = args.memory
+    # enable_role = args.role
+    # history_count = args.count
     print(f"\n扮演模式启动状态为：{enable_role}")
     if enable_history:
         print(f"会话记忆启动状态为：{enable_history}")
@@ -78,16 +83,25 @@ def role_set():
 initialize()
 print("=====================================================================\n")
 print(f"开始导入ChatGLM模型\n")
-
-tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
-# 导入chatglm 你可以换你喜欢的版本模型. 量化int8： .quantize(8)
+# config = AutoConfig.from_pretrained(model_path, trust_remote_code=True, pre_seq_len=128)
+tokenizer = AutoTokenizer.from_pretrained(
+    model_path, trust_remote_code=True
+)  # 导入chatglm 你可以换你喜欢的版本模型
+# quantize量化配置；
 model = AutoModel.from_pretrained(model_path, trust_remote_code=True).cuda()
 
+# P-tuning加载训练模型
+# prefix_state_dict = torch.load(os.path.join(ptuning_path, "pytorch_model.bin"))
+# new_prefix_state_dict = {}
+# for k, v in prefix_state_dict.items():
+#     if k.startswith("transformer.prefix_encoder."):
+#         new_prefix_state_dict[k[len("transformer.prefix_encoder."):]] = v
+# model.transformer.prefix_encoder.load_state_dict(new_prefix_state_dict)
+# model.transformer.prefix_encoder.float()
 
 # lora加载训练模型
 model = PeftModel.from_pretrained(
-    model,
-    "LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last",
+    model, "LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last"
 )
 model = model.merge_and_unload()
 
@@ -102,40 +116,40 @@ print("--------------------")
 print("启动成功！")
 print("--------------------")
 
-room_id = int(input("输入你的直播间编号: "))  # 输入直播间编号
-room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
-sched1 = AsyncIOScheduler(timezone="Asia/Shanghai")
+# sched1 = BlockingScheduler(timezone="Asia/Shanghai")
 
 
-@room.on("INTERACT_WORD")  # 用户进入直播间
-async def in_liveroom(event):
-    global is_ai_ready
-    user_name = event["data"]["data"]["uname"]  # 获取用户昵称
-    time1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"{time1}:粉丝\033[36m[{user_name}]\033[0m进入了直播间")
-    # 直接放到语音合成处理
-    AnswerList.put(f"欢迎{user_name}来到吟美的直播间")
-
-
-@room.on("DANMU_MSG")  # 弹幕消息事件回调函数
-async def input_msg(event):
+def on_input():
     """
     处理弹幕消息
     """
     global QuestionList
     global QuestionName
     global LogsList
-    content = event["data"]["info"][1]  # 获取弹幕内容
-    user_name = event["data"]["info"][2][1]  # 获取用户昵称
-    print(f"\033[36m[{user_name}]\033[0m:{content}")  # 打印弹幕信息
-    if not QuestionList.full():
-        QuestionName.put(user_name)  # 将用户名放入队列
-        QuestionList.put(content)  # 将弹幕消息放入队列
-        time1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        LogsList.put(f"[{time1}] [{user_name}]：{content}")
-        print("\033[32mSystem>>\033[0m已将该条弹幕添加入问题队列")
-    else:
-        print("\033[32mSystem>>\033[0m队列已满，该条弹幕被丢弃")
+    while True:
+        content = input("输入你的问题: ")
+        user_name = "Winlone"
+        print(f"\033[36m[{user_name}]\033[0m:{content}")  # 打印弹幕信息
+        if not QuestionList.full():
+            QuestionName.put(user_name)  # 将用户名放入队列
+            QuestionList.put(content)  # 将弹幕消息放入队列
+            time1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            LogsList.put(f"[{time1}] [{user_name}]：{content}")
+            print("\033[32mSystem>>\033[0m已将该条弹幕添加入问题队列")
+        else:
+            print("\033[32mSystem>>\033[0m队列已满，该条弹幕被丢弃")
+        # 执行ai回复线程
+        # thread1 = threading.Thread(target=all)
+        # thread1.start()
+        check_answer()
+        # check_tts()
+        # check_mpv()
+
+
+def all():
+    check_answer()
+    check_tts()
+    check_mpv()
 
 
 def ai_response():
@@ -188,7 +202,7 @@ def ai_response():
     # 加入回复列表，并且后续合成语音
     AnswerList.put(f"{prompt}" + "," + answer)
     current_question_count = QuestionList.qsize()
-    print(f"\033[31m[ChatGLM]\033[0m{answer}")  # 打印AI回复信息
+    print(f"\033[31m[AI]\033[0m{answer}")  # 打印AI回复信息
     print(
         f"\033[32mSystem>>\033[0m[{user_name}]的回复已存入队列，当前剩余问题数:{current_question_count}"
     )
@@ -259,21 +273,13 @@ def tts_generate():
     )  # 执行命令行指令
     begin_name = response.find("回复")
     end_name = response.find("：")
-    contain = response.find("来到吟美的直播")
-    if contain > 0:
-        # 欢迎语
-        print(
-            f"\033[32mSystem>>\033[0m对[{response}]的回复已成功转换为语音并缓存为output{AudioCount}.mp3"
-        )
-        # 表情加入:使用键盘控制VTube
-        EmoteList.put(f"{response}")
-    else:
-        # 回复语
-        name = response[begin_name + 2 : end_name]
-        print(f"\033[32mSystem>>\033[0m对[{name}]的回复已成功转换为语音并缓存为output{AudioCount}.mp3")
-        # 表情加入:使用键盘控制VTube
-        emote = response[end_name : len(response)]
-        EmoteList.put(f"{emote}")
+    name = response[begin_name + 2 : end_name]
+    print(f"\033[32mSystem>>\033[0m对[{name}]的回复已成功转换为语音并缓存为output{AudioCount}.mp3")
+
+    # 表情加入:使用键盘控制VTube
+    # emote_thread = threading.Thread(target=emote_show(response))
+    # emote_thread.start()
+
     # 加入音频播放列表
     MpvList.put(AudioCount)
     AudioCount += 1
@@ -368,12 +374,6 @@ def mpv_read():
     while not MpvList.empty():
         temp1 = MpvList.get()
         current_mpvlist_count = MpvList.qsize()
-
-        # 表情加入:使用键盘控制VTube
-        response = EmoteList.get()
-        emote_thread = threading.Thread(target=emote_show(response))
-        emote_thread.start()
-
         print(
             f"\033[32mSystem>>\033[0m开始播放output{temp1}.mp3，当前待播语音数：{current_mpvlist_count}"
         )
@@ -404,11 +404,11 @@ def chat_response(prompt, history, past_key_values, return_past_key_values):
 
 
 def main():
-    sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
-    sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
-    sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
-    sched1.start()
-    sync(room.connect())  # 开始监听弹幕流
+    # sched1.add_job(check_answer, 'interval', seconds=1, id=f'answer', max_instances=4)
+    # sched1.add_job(check_tts, 'interval', seconds=1, id=f'tts', max_instances=4)
+    # sched1.add_job(check_mpv, 'interval', seconds=1, id=f'mpv', max_instances=4)
+    # sched1.start()
+    on_input()  # 输入框
 
 
 if __name__ == "__main__":
