@@ -39,8 +39,8 @@ enable_role = False  # 是否启用扮演模式
 
 # b站直播身份验证：实例化 Credential 类
 cred = Credential(
-    sessdata="b4981a9e,1718634852,60ad3*c2CjDQHDlJG3xO0thsuTcFnNSR8V_ldwpuAcYNHO_RqXl9EuDWwz-_vWYmI6hDhvO3q_kSVmtRREcwS3I2aW9VRVlOamhJcEVTTUtfT0paR2pnNHVSYjZCS09meUlqTzVwVFltT1V2OXRmdHNsNmZjMHNweEszdnNGYTR0ZHBwVjlEaGtveGg1czF3IIEC",
-    buvid3="0A13475A-402F-CB81-5E03-E1E992C5FF7C86303infoc",
+    sessdata="_vWYmI6hDhvO3q_kSVmtRREcwS3I2aW9VRVlOamhJcEVTTUtfT0paR2pnNHVSYjZCS09meUlqTzVwVFltT1V2OXRmdHNsNmZjMHNweEszdnNGYTR0ZHBwVjlEaGtveGg1czF3IIEC",
+    buvid3="",
 )
 
 room_id = int(input("输入你的B站直播间编号: "))  # 输入直播间编号
