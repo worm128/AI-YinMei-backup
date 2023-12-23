@@ -2,3 +2,4 @@ APScheduler
 bilibili-api-python
 edge-tts
 pynput
+duckduckgo_search

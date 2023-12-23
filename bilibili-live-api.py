@@ -11,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bilibili_api import live, sync, Credential
 from pynput.keyboard import Key, Controller
+from duckduckgo_search import DDGS
 
 print("=====================================================================")
 print("开始启动人工智能吟美！")
@@ -127,6 +128,19 @@ def ai_response():
     prompt = QuestionList.get()
     user_name = QuestionName.get()
     ques = LogsList.get()
+
+    # 搜索引擎查询
+    text = ["查询", "查一下", "搜索"]
+    num = is_index_contain_string(text, prompt)
+    query = prompt[num : len(prompt)]
+    print("搜索词：" + query)
+    searchStr = ""
+    if num > 0:
+        searchStr = web_search(query)
+    if searchStr != "":
+        prompt = f'帮我在答案"{searchStr}"中提取"{query}"的信息'
+        print(f"重置提问:{prompt}")
+    # 询问LLM
     response = chat_tgw(prompt, "yinmei", "chat", "Winlone")
     response = response.replace("You", user_name)
     answer = f"回复{user_name}：{response}"
@@ -144,6 +158,19 @@ def ai_response():
             f"{ques}\n[{time2}] {answer}\n========================================================\n"
         )
     is_ai_ready = True  # 指示AI已经准备好回复下一个问题
+
+
+def web_search(query):
+    with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
+        for r in ddgs.text(
+            query,
+            region="cn-zh",
+            timelimit="d",
+            backend="api",
+            max_results=1,
+        ):
+            print("搜索内容：" + r["body"])
+            return r["body"]
 
 
 def check_answer():
@@ -258,6 +285,16 @@ def emote_do(text, response, keyboard, startTime, key):
         time.sleep(1)
         keyboard.release(key)
         print(f"{response}:输出表情({start}){key}")
+
+
+def is_index_contain_string(string_array, target_string):
+    i = 0
+    for s in string_array:
+        i = i + 1
+        if s in target_string:
+            num = target_string.find(s)
+            return num + len(s)
+    return 0
 
 
 def is_array_contain_string(string_array, target_string):

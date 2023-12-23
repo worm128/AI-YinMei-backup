@@ -11,6 +11,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from bilibili_api import live, sync, Credential
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 from pynput.keyboard import Key, Controller
+from duckduckgo_search import DDGS
 
 print("=====================================================================")
 print("开始启动人工智能吟美！")
@@ -36,8 +37,8 @@ history_count = 2  # 定义最大对话记忆轮数,请注意这个数值不包�
 enable_role = False  # 是否启用扮演模式
 # b站直播身份验证：实例化 Credential 类
 cred = Credential(
-    sessdata="b4981a9e,1718634852,60ad3*c2CjDQHDlJG3xO0thsuTcFnNSR8V_ldwpuAcYNHO_RqXl9EuDWwz-_vWYmI6hDhvO3q_kSVmtRREcwS3I2aW9VRVlOamhJcEVTTUtfT0paR2pnNHVSYjZCS09meUlqTzVwVFltT1V2OXRmdHNsNmZjMHNweEszdnNGYTR0ZHBwVjlEaGtveGg1czF3IIEC",
-    buvid3="0A13475A-402F-CB81-5E03-E1E992C5FF7C86303infoc",
+    sessdata="",
+    buvid3="",
 )
 
 # AI基础模型路径
@@ -151,6 +152,19 @@ def ai_response():
     prompt = QuestionList.get()
     user_name = QuestionName.get()
     ques = LogsList.get()
+
+    # 搜索引擎查询
+    text = ["查询", "查一下", "搜索"]
+    num = is_index_contain_string(text, prompt)
+    query = prompt[num : len(prompt)]
+    print("搜索词：" + query)
+    searchStr = ""
+    if num > 0:
+        searchStr = web_search(query)
+    if searchStr != "":
+        prompt = f'帮我在答案"{searchStr}"中提取"{query}"的信息'
+        print(f"重置提问:{prompt}")
+    # 询问LLM
     if (
         len(history) >= len(Role_history) + history_count and enable_history
     ):  # 如果启用记忆且达到最大记忆长度
@@ -184,6 +198,19 @@ def ai_response():
             f"{ques}\n[{time2}] {answer}\n========================================================\n"
         )
     is_ai_ready = True  # 指示AI已经准备好回复下一个问题
+
+
+def web_search(query):
+    with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
+        for r in ddgs.text(
+            query,
+            region="cn-zh",
+            timelimit="d",
+            backend="api",
+            max_results=1,
+        ):
+            print("搜索内容：" + r["body"])
+            return r["body"]
 
 
 def check_answer():
@@ -295,6 +322,16 @@ def emote_do(text, response, keyboard, startTime, key):
         time.sleep(1)
         keyboard.release(key)
         print(f"{response}:输出表情({start}){key}")
+
+
+def is_index_contain_string(string_array, target_string):
+    i = 0
+    for s in string_array:
+        i = i + 1
+        if s in target_string:
+            num = target_string.find(s)
+            return num + len(s)
+    return 0
 
 
 def is_array_contain_string(string_array, target_string):
