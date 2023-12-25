@@ -142,8 +142,8 @@ def on_input():
         # thread1 = threading.Thread(target=all)
         # thread1.start()
         check_answer()
-        # check_tts()
-        # check_mpv()
+        check_tts()
+        check_mpv()
 
 
 def all():
@@ -163,21 +163,22 @@ def ai_response():
     global QuestionName
     global LogsList
     global history
-    prompt = QuestionList.get()
+    query = QuestionList.get()
     user_name = QuestionName.get()
     ques = LogsList.get()
+    prompt = query
 
     # 搜索引擎查询
     text = ["查询", "查一下", "搜索"]
-    num = is_index_contain_string(text, prompt)
-    query = prompt[num : len(prompt)]
-    print("搜索词：" + query)
+    num = is_index_contain_string(text, query)  # 判断是不是需要搜索
     searchStr = ""
     if num > 0:
-        searchStr = web_search(query)
-    if searchStr != "":
-        prompt = f'帮我在答案"{searchStr}"中提取"{query}"的信息'
-        print(f"重置提问:{prompt}")
+        queryExtract = query[num : len(query)]  # 提取提问语句
+        print("搜索词：" + queryExtract)
+        searchStr = web_search(queryExtract)
+        if searchStr != "":
+            prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
+            print(f"重置提问:{prompt}")
     # 询问LLM
     if (
         len(history) >= len(Role_history) + history_count and enable_history
@@ -200,7 +201,7 @@ def ai_response():
         print(response)
     answer = f"回复{user_name}：{response}"
     # 加入回复列表，并且后续合成语音
-    AnswerList.put(f"{prompt}" + "," + answer)
+    AnswerList.put(f"{query}" + "," + answer)
     current_question_count = QuestionList.qsize()
     print(f"\033[31m[AI]\033[0m{answer}")  # 打印AI回复信息
     print(
@@ -222,7 +223,7 @@ def web_search(query):
             region="cn-zh",
             timelimit="d",
             backend="api",
-            max_results=2,
+            max_results=3,
         ):
             print("搜索内容：" + r["body"])
             content = content + r["body"]

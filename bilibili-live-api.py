@@ -39,7 +39,7 @@ enable_role = False  # 是否启用扮演模式
 
 # b站直播身份验证：实例化 Credential 类
 cred = Credential(
-    sessdata="_vWYmI6hDhvO3q_kSVmtRREcwS3I2aW9VRVlOamhJcEVTTUtfT0paR2pnNHVSYjZCS09meUlqTzVwVFltT1V2OXRmdHNsNmZjMHNweEszdnNGYTR0ZHBwVjlEaGtveGg1czF3IIEC",
+    sessdata="",
     buvid3="",
 )
 
@@ -125,27 +125,28 @@ def ai_response():
     global QuestionName
     global LogsList
     global history
-    prompt = QuestionList.get()
+    query = QuestionList.get()
     user_name = QuestionName.get()
     ques = LogsList.get()
+    prompt = query
 
     # 搜索引擎查询
     text = ["查询", "查一下", "搜索"]
-    num = is_index_contain_string(text, prompt)
-    query = prompt[num : len(prompt)]
-    print("搜索词：" + query)
+    num = is_index_contain_string(text, query)  # 判断是不是需要搜索
     searchStr = ""
     if num > 0:
-        searchStr = web_search(query)
-    if searchStr != "":
-        prompt = f'帮我在答案"{searchStr}"中提取"{query}"的信息'
-        print(f"重置提问:{prompt}")
+        queryExtract = query[num : len(query)]  # 提取提问语句
+        print("搜索词：" + queryExtract)
+        searchStr = web_search(queryExtract)
+        if searchStr != "":
+            prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
+            print(f"重置提问:{prompt}")
     # 询问LLM
     response = chat_tgw(prompt, "yinmei", "chat", "Winlone")
     response = response.replace("You", user_name)
     answer = f"回复{user_name}：{response}"
     # 加入回复列表，并且后续合成语音
-    AnswerList.put(f"{prompt}" + "," + answer)
+    AnswerList.put(f"{query}" + "," + answer)
     current_question_count = QuestionList.qsize()
     print(f"\033[31m[AI回复]\033[0m{answer}")  # 打印AI回复信息
     print(
