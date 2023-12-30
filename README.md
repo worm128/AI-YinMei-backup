@@ -21,6 +21,8 @@
 
 - 支持 Vtuber 表情控制
 
+- 支持 stable-diffusion-webui 绘画输出 OBS 直播间
+
 ### 运行环境
 
 - Python 3.11

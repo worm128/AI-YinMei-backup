@@ -5,7 +5,14 @@ import subprocess
 import threading
 import os
 import time
+import requests
+import pyvirtualcam
+import cv2
+import base64
+import numpy as np
+import io
 
+from PIL import Image
 from peft import PeftModel
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from bilibili_api import live, sync, Credential
@@ -44,7 +51,15 @@ cred = Credential(
 # AI基础模型路径
 model_path = "ChatGLM2/THUDM/chatglm2-6b"
 # 训练模型路径
-ptuning_path = "ChatGLM2/ptuning/lora2/mydo-pt-128-0.0018/checkpoint-1000"
+checkpoint_path = "LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last"
+
+# ============= 绘画参数 =====================
+is_drawing = 0
+steps = 35
+width = 730  # 图片宽度
+height = 470  # 图片高度
+DrawList = queue.Queue()
+# ============================================
 
 
 # 初始化设定
@@ -87,7 +102,7 @@ model = AutoModel.from_pretrained(model_path, trust_remote_code=True).cuda()
 # lora加载训练模型
 model = PeftModel.from_pretrained(
     model,
-    "LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last",
+    checkpoint_path,
 )
 model = model.merge_and_unload()
 
@@ -153,6 +168,7 @@ def ai_response():
     user_name = QuestionName.get()
     ques = LogsList.get()
     prompt = query
+    is_query = True
 
     # 搜索引擎查询
     text = ["查询", "查一下", "搜索"]
@@ -165,26 +181,44 @@ def ai_response():
         if searchStr != "":
             prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
             print(f"重置提问:{prompt}")
+            is_query = True
+    # 绘画
+    text = ["画画", "画一个", "画一下"]
+    num = is_index_contain_string(text, query)
+    if num > 0:
+        queryExtract = query[num : len(query)]  # 提取提问语句
+        print("搜索词：" + queryExtract)
+        response = f"我给你画了一张画"
+        # 开始绘画
+        answers_thread = threading.Thread(target=draw(queryExtract))
+        answers_thread.start()
+        # 绘画进度
+        progress_thread = threading.Thread(target=progress())
+        progress_thread.start()
+        is_query = False
+
     # 询问LLM
-    if (
-        len(history) >= len(Role_history) + history_count and enable_history
-    ):  # 如果启用记忆且达到最大记忆长度
-        history = Role_history + history[-history_count:]
-        response, history = model.chat(tokenizer, prompt, history=history)
-        # response, history = chat_response(prompt,history,None,True)
-    elif enable_role and not enable_history:  # 如果没有启用记忆且启用扮演
-        history = Role_history
-        response, history = model.chat(tokenizer, prompt, history=history)
-        # response, history = chat_response(prompt,[],None,True)
-    elif enable_history:  # 如果启用记忆
-        response, history = model.chat(tokenizer, prompt, history=history)
-        # response, history = chat_response(prompt,history,None,True)
-    elif not enable_history:  # 如果没有启用记忆
-        response, history = model.chat(tokenizer, prompt, history=[])
-        # response, history = chat_response(prompt,[],None,True)
-    else:
-        response = ["Error：记忆和扮演配置错误！请检查相关设置"]
-        print(response)
+    if is_query == True:
+        if (
+            len(history) >= len(Role_history) + history_count and enable_history
+        ):  # 如果启用记忆且达到最大记忆长度
+            history = Role_history + history[-history_count:]
+            response, history = model.chat(tokenizer, prompt, history=history)
+            # response, history = chat_response(prompt,history,None,True)
+        elif enable_role and not enable_history:  # 如果没有启用记忆且启用扮演
+            history = Role_history
+            response, history = model.chat(tokenizer, prompt, history=history)
+            # response, history = chat_response(prompt,[],None,True)
+        elif enable_history:  # 如果启用记忆
+            response, history = model.chat(tokenizer, prompt, history=history)
+            # response, history = chat_response(prompt,history,None,True)
+        elif not enable_history:  # 如果没有启用记忆
+            response, history = model.chat(tokenizer, prompt, history=[])
+            # response, history = chat_response(prompt,[],None,True)
+        else:
+            response = ["Error：记忆和扮演配置错误！请检查相关设置"]
+            print(response)
+
     answer = f"回复{user_name}：{response}"
     # 加入回复列表，并且后续合成语音
     AnswerList.put(f"{query}" + "," + answer)
@@ -209,7 +243,7 @@ def web_search(query):
             region="cn-zh",
             timelimit="d",
             backend="api",
-            max_results=2,
+            max_results=3,
         ):
             print("搜索内容：" + r["body"])
             content = content + r["body"]
@@ -404,12 +438,94 @@ def chat_response(prompt, history, past_key_values, return_past_key_values):
     return response, history
 
 
+# 绘画
+def draw(query, do):
+    global is_drawing
+    url = "http://127.0.0.1:7860"
+    payload = {
+        "prompt": query,
+        "negative_prompt": "EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)",
+        "hr_checkpoint_name": "aingdiffusion_v13",
+        "refiner_checkpoint": "aingdiffusion_v13",
+        "sampler_index": "DPM++ SDE Karras",
+        "steps": steps,
+        "cfg_scale": 7,
+        "seed": -1,
+        "width": width,
+        "height": height,
+    }
+
+    # stable-diffusion绘图
+    is_drawing = 1
+    response = requests.post(url=f"{url}/sdapi/v1/txt2img", json=payload)
+    is_drawing = 2
+    r = response.json()
+    # 读取二进制字节流
+    img = Image.open(io.BytesIO(base64.b64decode(r["images"][0])))
+    img = img.resize((width, height), Image.LANCZOS)
+    # 字节流转换为cv2图片对象
+    image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
+    image = image[:, :, [2, 1, 0]]
+    # 虚拟摄像头输出
+    DrawList.put(image)
+
+
+# 图片生成进度
+def progress():
+    global is_drawing
+    time.sleep(0.3)
+    while True:
+        # 绘画中：输出进度图
+        if is_drawing == 1:
+            url = "http://127.0.0.1:7860"
+            # stable-diffusion绘图进度
+            response = requests.get(url=f"{url}/sdapi/v1/progress")
+            r = response.json()
+            imgstr = r["current_image"]
+            if imgstr != "" and imgstr is not None:
+                print(f"输出进度：" + str(round(r["progress"] * 100, 2)) + "%")
+                # 读取二进制字节流
+                img = Image.open(io.BytesIO(base64.b64decode(imgstr)))
+                img = img.resize((width, height), Image.LANCZOS)
+                # 字节流转换为cv2图片对象
+                image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
+                image = image[:, :, [2, 1, 0]]
+                # 虚拟摄像头输出
+                DrawList.put(image)
+            time.sleep(1)
+        # 绘画完成：退出
+        elif is_drawing == 2:
+            print(f"输出进度：100%")
+            break
+
+
+# 输出图片流到虚拟摄像头
+def outCamera():
+    global DrawList
+    with pyvirtualcam.Camera(width, height, fps=20) as cam:
+        while True:
+            if not DrawList.empty():
+                image = DrawList.get()
+                cam.send(image)
+                cam.sleep_until_next_frame()
+                time.sleep(1)
+
+
 def main():
+    # 唤起虚拟摄像头
+    outCamera_thread = threading.Thread(target=outCamera)
+    outCamera_thread.start()
+    # LLM回复
     sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
+    # tts语音合成
     sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
+    # MPV播放
     sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
     sched1.start()
-    sync(room.connect())  # 开始监听弹幕流
+    # 开始监听弹幕流
+    sync(room.connect())
 
 
 if __name__ == "__main__":

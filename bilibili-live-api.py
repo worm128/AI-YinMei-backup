@@ -6,21 +6,34 @@ import threading
 import os
 import time
 import requests
+import pyvirtualcam
+import cv2
+import base64
+import numpy as np
+import io
 
+from PIL import Image
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
-
 from bilibili_api import live, sync, Credential
 from pynput.keyboard import Key, Controller
 from duckduckgo_search import DDGS
+from threading import Thread
+from peft import PeftModel
+from transformers import AutoTokenizer, AutoModel, AutoConfig
 
 print("=====================================================================")
 print("开始启动人工智能吟美！")
-print("组成功能：LLM大语言模型+bilibili直播对接+TTS微软语音合成+MPV语音播放+VTube Studio人物模型+pynput表情控制")
+print(
+    "组成功能：LLM大语言模型+bilibili直播对接+TTS微软语音合成+MPV语音播放+VTube Studio人物模型+pynput表情控制+stable-diffusion-webui绘画"
+)
 print("源码地址：https://github.com/worm128/ai-yinmei")
 print("开发者：Winlone")
 print("=====================================================================")
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+sched1 = AsyncIOScheduler(timezone="Asia/Shanghai")
+
+# ============= LLM参数 =====================
 QuestionList = queue.Queue(10)  # 定义问题 用户名 回复 播放列表 四个先进先出队列
 QuestionName = queue.Queue(10)
 AnswerList = queue.Queue()
@@ -35,20 +48,50 @@ AudioCount = 0
 enable_history = False  # 是否启用记忆
 history_count = 2  # 定义最大对话记忆轮数,请注意这个数值不包括扮演设置消耗的轮数，只有当enable_history为True时生效
 enable_role = False  # 是否启用扮演模式
+# ============================================
 
+# ============= 本地模型加载 =====================
+is_local_llm = int(input("是否使用本地LLM模型(1.是 0.否): "))
+if is_local_llm == 1:
+    # AI基础模型路径
+    model_path = "ChatGLM2/THUDM/chatglm2-6b"
+    # 训练模型路径
+    checkpoint_path = (
+        "LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last"
+    )
+    tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
+    # 导入chatglm 你可以换你喜欢的版本模型. 量化int8： .quantize(8)
+    model = AutoModel.from_pretrained(model_path, trust_remote_code=True).cuda()
+    # lora加载训练模型
+    model = PeftModel.from_pretrained(
+        model,
+        checkpoint_path,
+    )
+    model = model.merge_and_unload()
+    model = model.eval()
+# ============================================
 
+# ============= 绘画参数 =====================
+is_drawing = 0
+steps = 35
+width = 730  # 图片宽度
+height = 470  # 图片高度
+DrawList = queue.Queue()
+# ============================================
+
+# ============= B站直播间 =====================
 # b站直播身份验证：实例化 Credential 类
 cred = Credential(
     sessdata="",
     buvid3="",
 )
-
 room_id = int(input("输入你的B站直播间编号: "))  # 输入直播间编号
 room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
-sched1 = AsyncIOScheduler(timezone="Asia/Shanghai")
+# ============================================
+
 
 print("--------------------")
-print("启动成功！")
+print("AI虚拟主播-启动成功！")
 print("--------------------")
 
 
@@ -62,6 +105,7 @@ async def in_liveroom(event):
     AnswerList.put(f"欢迎{user_name}来到吟美的直播间")
 
 
+# B站弹幕处理
 @room.on("DANMU_MSG")  # 弹幕消息事件回调函数
 async def input_msg(event):
     """
@@ -83,6 +127,7 @@ async def input_msg(event):
         print("\033[32mSystem>>\033[0m队列已满，该条弹幕被丢弃")
 
 
+# text-generation-webui接口调用-LLM回复
 # mode:instruct/chat/chat-instruct  preset:Alpaca/Winlone(自定义)  character:角色卡Rengoku/Ninya
 def chat_tgw(content, character, mode, preset):
     url = "http://127.0.0.1:5000/v1/chat/completions"
@@ -114,6 +159,7 @@ def chat_tgw(content, character, mode, preset):
     return assistant_message
 
 
+# LLM回复
 def ai_response():
     """
     从问题队列中提取一条，生成回复并存入回复队列中
@@ -125,10 +171,12 @@ def ai_response():
     global QuestionName
     global LogsList
     global history
+    global is_drawing
     query = QuestionList.get()
     user_name = QuestionName.get()
     ques = LogsList.get()
     prompt = query
+    is_query = True
 
     # 搜索引擎查询
     text = ["查询", "查一下", "搜索"]
@@ -141,9 +189,33 @@ def ai_response():
         if searchStr != "":
             prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
             print(f"重置提问:{prompt}")
+            is_query = True
+    # 绘画
+    text = ["画画", "画一个", "画一下"]
+    num = is_index_contain_string(text, query)
+    if num > 0:
+        queryExtract = query[num : len(query)]  # 提取提问语句
+        print("绘画提示：" + queryExtract)
+        is_drawing = 0  # 初始化画画
+        response = f"我给你画了一张画"
+        # 开始绘画
+        answers_thread = Thread(target=draw, args=(queryExtract, ""))
+        answers_thread.start()
+        # 绘画进度
+        progress_thread = Thread(target=progress)
+        progress_thread.start()
+        is_query = False
+
     # 询问LLM
-    response = chat_tgw(prompt, "yinmei", "chat", "Winlone")
-    response = response.replace("You", user_name)
+    if is_query == True:
+        # text-generation-webui
+        if is_local_llm == 0:
+            response = chat_tgw(prompt, "yinmei", "chat", "Winlone")
+            response = response.replace("You", user_name)
+        # 本地LLM
+        elif is_local_llm == 1:
+            response, history = model.chat(tokenizer, prompt, history=[])
+
     answer = f"回复{user_name}：{response}"
     # 加入回复列表，并且后续合成语音
     AnswerList.put(f"{query}" + "," + answer)
@@ -169,7 +241,7 @@ def web_search(query):
             region="cn-zh",
             timelimit="d",
             backend="api",
-            max_results=2,
+            max_results=3,
         ):
             print("搜索内容：" + r["body"])
             content = content + r["body"]
@@ -348,12 +420,94 @@ def mpv_read():
     is_mpv_ready = True
 
 
+# 绘画
+def draw(query, do):
+    global is_drawing
+    url = "http://127.0.0.1:7860"
+    payload = {
+        "prompt": query,
+        "negative_prompt": "EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)",
+        "hr_checkpoint_name": "aingdiffusion_v13",
+        "refiner_checkpoint": "aingdiffusion_v13",
+        "sampler_index": "DPM++ SDE Karras",
+        "steps": steps,
+        "cfg_scale": 7,
+        "seed": -1,
+        "width": width,
+        "height": height,
+    }
+
+    # stable-diffusion绘图
+    is_drawing = 1
+    response = requests.post(url=f"{url}/sdapi/v1/txt2img", json=payload)
+    is_drawing = 2
+    r = response.json()
+    # 读取二进制字节流
+    img = Image.open(io.BytesIO(base64.b64decode(r["images"][0])))
+    img = img.resize((width, height), Image.LANCZOS)
+    # 字节流转换为cv2图片对象
+    image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
+    image = image[:, :, [2, 1, 0]]
+    # 虚拟摄像头输出
+    DrawList.put(image)
+
+
+# 图片生成进度
+def progress():
+    global is_drawing
+    time.sleep(0.3)
+    while True:
+        # 绘画中：输出进度图
+        if is_drawing == 1:
+            url = "http://127.0.0.1:7860"
+            # stable-diffusion绘图进度
+            response = requests.get(url=f"{url}/sdapi/v1/progress")
+            r = response.json()
+            imgstr = r["current_image"]
+            if imgstr != "" and imgstr is not None:
+                print(f"输出进度：" + str(round(r["progress"] * 100, 2)) + "%")
+                # 读取二进制字节流
+                img = Image.open(io.BytesIO(base64.b64decode(imgstr)))
+                img = img.resize((width, height), Image.LANCZOS)
+                # 字节流转换为cv2图片对象
+                image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+                # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
+                image = image[:, :, [2, 1, 0]]
+                # 虚拟摄像头输出
+                DrawList.put(image)
+            time.sleep(1)
+        # 绘画完成：退出
+        elif is_drawing == 2:
+            print(f"输出进度：100%")
+            break
+
+
+# 输出图片流到虚拟摄像头
+def outCamera():
+    global DrawList
+    with pyvirtualcam.Camera(width, height, fps=20) as cam:
+        while True:
+            if not DrawList.empty():
+                image = DrawList.get()
+                cam.send(image)
+                cam.sleep_until_next_frame()
+                time.sleep(1)
+
+
 def main():
+    # 唤起虚拟摄像头
+    outCamera_thread = threading.Thread(target=outCamera)
+    outCamera_thread.start()
+    # LLM回复
     sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
+    # tts语音合成
     sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
+    # MPV播放
     sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
     sched1.start()
-    sync(room.connect())  # 开始监听弹幕流
+    # 开始监听弹幕流
+    sync(room.connect())
 
 
 if __name__ == "__main__":

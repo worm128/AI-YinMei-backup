@@ -3,3 +3,5 @@ bilibili-api-python
 edge-tts
 pynput
 duckduckgo_search
+pyvirtualcam
+opencv-python

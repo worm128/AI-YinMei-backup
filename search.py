@@ -1,3 +1,4 @@
+# 搜索测试
 from duckduckgo_search import DDGS
 
 with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:

@@ -1,3 +1,4 @@
+# 键盘测试
 import time
 from pynput.keyboard import Key, Controller
 from pykeyboard import PyKeyboard  # 模拟键盘
