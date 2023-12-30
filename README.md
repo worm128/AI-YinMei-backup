@@ -40,20 +40,21 @@
 
 ### 启动方式
 
-1、启动应用层，在根目录
+1、(必选)启动应用层，在根目录
 
 ```bash
 #进入虚拟环境
 & 盘符:路径/pylib/aivenv/Scripts/Activate.ps1
 #安装py包
 pip install -r requirements.txt
-#选择一、启动对接b站直播程序(此程序会对接后端text-generation-webui接口)
+#选择一、启动对接b站直播程序(选0.此程序会对接后端text-generation-webui接口，选1.当前加载LLM本地模型)
 python bilibili-live-api.py
 #选择二、启动对接b站直播程序(此程序直接在当前代码加载chatglm大语言模型+训练checkpoint)
+(已废弃，已经集成到bilibili-live-api.py)
 python bilibili-live-local.py
 ```
 
-2、启动 LLM 模型，进入 text-generation-webui
+2、(可选)启动 LLM 模型，进入 text-generation-webui
 
 ```bash
 #进入虚拟环境
@@ -64,10 +65,10 @@ pip install -r requirements.txt
 ./start.bat
 ```
 
-3、皮肤启动，安装 steam，安装 VTube Studio<br>
+3、(必选)皮肤启动，安装 steam，安装 VTube Studio<br>
 这个自行下载 steam 平台，在平台里面有一个 VTube Studio 软件，它就是启动 live2D 的虚拟主播皮肤<br>
 
-4、其他<br>
+4、(必选)其他<br>
 安装虚拟声卡：虚拟声卡驱动（Virtual Audio Cable）4.66 官方版<br>
 
 此外，需要在 text-generation-webui/models 路径放入 LLM 模型，我这里放的是 chatgml2 的模型，大家可以任意选择底层 LLM 模型，例如，千问、百川、chatglm、llama 等<br>
