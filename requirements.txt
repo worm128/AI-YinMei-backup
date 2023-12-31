@@ -5,3 +5,5 @@ pynput
 duckduckgo_search
 pyvirtualcam
 opencv-python
+numpy
+Pillow

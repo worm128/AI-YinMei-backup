@@ -469,6 +469,7 @@ def progress():
                 print(f"输出进度：" + str(round(r["progress"] * 100, 2)) + "%")
                 # 读取二进制字节流
                 img = Image.open(io.BytesIO(base64.b64decode(imgstr)))
+                # 拉伸图片
                 img = img.resize((width, height), Image.LANCZOS)
                 # 字节流转换为cv2图片对象
                 image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
@@ -486,7 +487,8 @@ def progress():
 # 输出图片流到虚拟摄像头
 def outCamera():
     global DrawList
-    with pyvirtualcam.Camera(width, height, fps=20) as cam:
+    with pyvirtualcam.Camera(width, height, device="OBS Virtual Camera", fps=20) as cam:
+        print(f"输出虚拟摄像头: {cam.device}")
         while True:
             if not DrawList.empty():
                 image = DrawList.get()
