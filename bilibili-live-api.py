@@ -72,11 +72,12 @@ if is_local_llm == 1:
 # ============================================
 
 # ============= 绘画参数 =====================
-is_drawing = 0
+is_drawing = 2  # 1.绘画中 2.绘画完成
 steps = 35
 width = 730  # 图片宽度
 height = 470  # 图片高度
-DrawList = queue.Queue()
+CameraOutList = queue.Queue()  # 输出图片队列
+DrawQueueList = queue.Queue()  # 画画队列
 # ============================================
 
 # ============= B站直播间 =====================
@@ -196,15 +197,12 @@ def ai_response():
     if num > 0:
         queryExtract = query[num : len(query)]  # 提取提问语句
         print("绘画提示：" + queryExtract)
-        is_drawing = 0  # 初始化画画
-        response = f"我给你画了一张画"
-        # 开始绘画
-        answers_thread = Thread(target=draw, args=(queryExtract, ""))
-        answers_thread.start()
-        # 绘画进度
-        progress_thread = Thread(target=progress)
-        progress_thread.start()
+        draw_json = {"prompt": queryExtract, "username": user_name}
+        # 加入绘画队列
+        DrawQueueList.put(draw_json)
         is_query = False
+        is_ai_ready = True  # 指示AI已经准备好回复下一个问题
+        return
 
     # 询问LLM
     if is_query == True:
@@ -420,12 +418,30 @@ def mpv_read():
     is_mpv_ready = True
 
 
-# 绘画
-def draw(query, do):
+# 绘画任务队列
+def check_draw():
     global is_drawing
+    global DrawQueueList
+    if not DrawQueueList.empty() and is_drawing == 2:
+        draw_json = DrawQueueList.get()
+        print(f"启动绘画:{draw_json}")
+        # 开始绘画
+        answers_thread = Thread(
+            target=draw, args=(draw_json["prompt"], draw_json["username"])
+        )
+        answers_thread.start()
+        # 绘画进度
+        progress_thread = Thread(target=progress)
+        progress_thread.start()
+
+
+# 绘画
+def draw(prompt, username):
+    global is_drawing
+    global AnswerList
     url = "http://127.0.0.1:7860"
     payload = {
-        "prompt": query,
+        "prompt": prompt,
         "negative_prompt": "EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)",
         "hr_checkpoint_name": "aingdiffusion_v13",
         "refiner_checkpoint": "aingdiffusion_v13",
@@ -450,7 +466,9 @@ def draw(query, do):
     # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
     image = image[:, :, [2, 1, 0]]
     # 虚拟摄像头输出
-    DrawList.put(image)
+    CameraOutList.put(image)
+    # 加入回复列表，并且后续合成语音
+    AnswerList.put(f"回复{username}：我给你画了一张画《{prompt}》")
 
 
 # 图片生成进度
@@ -476,7 +494,7 @@ def progress():
                 # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
                 image = image[:, :, [2, 1, 0]]
                 # 虚拟摄像头输出
-                DrawList.put(image)
+                CameraOutList.put(image)
             time.sleep(1)
         # 绘画完成：退出
         elif is_drawing == 2:
@@ -486,12 +504,12 @@ def progress():
 
 # 输出图片流到虚拟摄像头
 def outCamera():
-    global DrawList
+    global CameraOutList
     with pyvirtualcam.Camera(width, height, device="OBS Virtual Camera", fps=20) as cam:
         print(f"输出虚拟摄像头: {cam.device}")
         while True:
-            if not DrawList.empty():
-                image = DrawList.get()
+            if not CameraOutList.empty():
+                image = CameraOutList.get()
                 cam.send(image)
                 cam.sleep_until_next_frame()
                 time.sleep(1)
@@ -507,6 +525,8 @@ def main():
     sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
     # MPV播放
     sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
+    # 绘画
+    sched1.add_job(check_draw, "interval", seconds=1, id=f"draw", max_instances=4)
     sched1.start()
     # 开始监听弹幕流
     sync(room.connect())

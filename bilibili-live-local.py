@@ -1,4 +1,4 @@
-# b站AI直播对接本地语言模型
+# b站AI直播对接本地语言模型(废弃不更新)
 import datetime
 import queue
 import subprocess
