@@ -11,7 +11,8 @@ import cv2
 import base64
 import numpy as np
 import io
-
+import random
+from io import BytesIO
 from PIL import Image
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from bilibili_api import live, sync, Credential
@@ -20,6 +21,7 @@ from duckduckgo_search import DDGS
 from threading import Thread
 from peft import PeftModel
 from transformers import AutoTokenizer, AutoModel, AutoConfig
+from urllib.parse import quote
 
 print("=====================================================================")
 print("开始启动人工智能吟美！")
@@ -32,6 +34,7 @@ print("=====================================================================")
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 sched1 = AsyncIOScheduler(timezone="Asia/Shanghai")
+proxies = {"http": "socks5://127.0.0.1:10806", "https": "socks5://127.0.0.1:10806"}
 
 # ============= LLM参数 =====================
 QuestionList = queue.Queue(10)  # 定义问题 用户名 回复 播放列表 四个先进先出队列
@@ -51,7 +54,7 @@ enable_role = False  # 是否启用扮演模式
 # ============================================
 
 # ============= 本地模型加载 =====================
-is_local_llm = int(input("是否使用本地LLM模型(1.是 0.否): "))
+is_local_llm = int(input("是否使用本地LLM模型(1.是 0.否): ") or "0")
 if is_local_llm == 1:
     # AI基础模型路径
     model_path = "ChatGLM2/THUDM/chatglm2-6b"
@@ -80,13 +83,18 @@ CameraOutList = queue.Queue()  # 输出图片队列
 DrawQueueList = queue.Queue()  # 画画队列
 # ============================================
 
+# ============= 搜图参数 =====================
+SearchImgList = queue.Queue()
+is_SearchImg = 2  # 1.搜图中 2.搜图完成
+# ============================================
+
 # ============= B站直播间 =====================
 # b站直播身份验证：实例化 Credential 类
 cred = Credential(
     sessdata="",
     buvid3="",
 )
-room_id = int(input("输入你的B站直播间编号: "))  # 输入直播间编号
+room_id = int(input("输入你的B站直播间编号: ") or "3033646")  # 输入直播间编号
 room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
 # ============================================
 
@@ -172,12 +180,11 @@ def ai_response():
     global QuestionName
     global LogsList
     global history
-    global is_drawing
     query = QuestionList.get()
     user_name = QuestionName.get()
     ques = LogsList.get()
     prompt = query
-    is_query = True
+    is_query = True  # 是否需要调用LLM True：需要  False：不需要
 
     # 搜索引擎查询
     text = ["查询", "查一下", "搜索"]
@@ -191,8 +198,21 @@ def ai_response():
             prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
             print(f"重置提问:{prompt}")
             is_query = True
+
+    # 搜索图片
+    text = ["搜图", "搜个图", "搜图片", "搜一下图片"]
+    num = is_index_contain_string(text, query)  # 判断是不是需要搜索
+    if num > 0:
+        queryExtract = query[num : len(query)]  # 提取提问语句
+        print("搜索图：" + queryExtract)
+        img_search_json = {"prompt": queryExtract, "username": user_name}
+        SearchImgList.put(img_search_json)
+        is_query = False
+        is_ai_ready = True  # 指示AI已经准备好回复下一个问题
+        return
+
     # 绘画
-    text = ["画画", "画一个", "画一下"]
+    text = ["画画", "画一个", "画一下", "画个"]
     num = is_index_contain_string(text, query)
     if num > 0:
         queryExtract = query[num : len(query)]  # 提取提问语句
@@ -231,6 +251,7 @@ def ai_response():
     is_ai_ready = True  # 指示AI已经准备好回复下一个问题
 
 
+# duckduckgo搜索引擎搜索
 def web_search(query):
     content = ""
     with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
@@ -246,6 +267,82 @@ def web_search(query):
     return content
 
 
+# duckduckgo搜索引擎搜图片
+def web_search_img(query):
+    imageNum = 10
+    imgUrl = ""
+    with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
+        ddgs_images_gen = ddgs.images(
+            query,
+            region="cn-zh",
+            safesearch="off",
+            size="Medium",
+            color="color",
+            type_image=None,
+            layout=None,
+            license_image=None,
+            max_results=imageNum,
+        )
+        i = 0
+        random_number = random.randrange(1, imageNum)
+        for r in ddgs_images_gen:
+            if i == random_number:
+                imgUrl = r["image"]
+                print(f"图片地址：{imgUrl},queryEncode:{query}")
+                break
+            i = i + 1
+
+    return imgUrl
+
+
+# 搜图任务
+def check_img_search():
+    global is_SearchImg
+    if not SearchImgList.empty() and is_SearchImg == 2:
+        is_SearchImg = 1
+        img_search_json = SearchImgList.get()
+        # 开始搜图任务
+        output_img_thead(img_search_json)
+        is_SearchImg = 2  # 搜图完成
+
+
+# 搜索引擎-搜图任务
+def output_img_thead(img_search_json):
+    global is_SearchImg
+    global CameraOutList
+    prompt = img_search_json["prompt"]
+    username = img_search_json["username"]
+    try:
+        imgUrl = web_search_img(prompt)
+        img_search_json2 = {"prompt": prompt, "username": username, "imgUrl": imgUrl}
+        print(f"搜图内容:{img_search_json2}")
+        image = output_img(imgUrl)
+        # 虚拟摄像头输出
+        CameraOutList.put(image)
+        # 加入回复列表，并且后续合成语音
+        AnswerList.put(f"回复{username}：我给你搜了一张图《{prompt}》")
+        time.sleep(10)  # 等待图片展示
+    except Exception as e:
+        print(e)
+    finally:
+        print(f"{username}搜图《{prompt}》结束")
+
+
+# 搜图输出虚拟摄像头
+def output_img(imgUrl):
+    response = requests.get(imgUrl, proxies=proxies)
+    img_data = response.content
+    # 读取二进制字节流
+    img = Image.open(BytesIO(img_data))
+    img = img.resize((width, height), Image.LANCZOS)
+    # 字节流转换为cv2图片对象
+    image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
+    image = image[:, :, [2, 1, 0]]
+    return image
+
+
+# 检查LLM回复线程
 def check_answer():
     """
     如果AI没有在生成回复且队列中还有问题 则创建一个生成的线程
@@ -256,27 +353,21 @@ def check_answer():
     global AnswerList
     if not QuestionList.empty() and is_ai_ready:
         is_ai_ready = False
-        answers_thread = threading.Thread(target=ai_response())
+        answers_thread = Thread(target=ai_response)
         answers_thread.start()
 
 
+# 如果语音已经放完且队列中还有回复 则创建一个生成并播放TTS的线程
 def check_tts():
-    """
-    如果语音已经放完且队列中还有回复 则创建一个生成并播放TTS的线程
-    :return:
-    """
     global is_tts_ready
     if not AnswerList.empty() and is_tts_ready:
         is_tts_ready = False
-        tts_thread = threading.Thread(target=tts_generate())
+        tts_thread = Thread(target=tts_generate)
         tts_thread.start()
 
 
+# 从回复队列中提取一条，通过edge-tts生成语音对应AudioCount编号语音
 def tts_generate():
-    """
-    从回复队列中提取一条，通过edge-tts生成语音对应AudioCount编号语音
-    :return:
-    """
     global is_tts_ready
     global AnswerList
     global MpvList
@@ -314,41 +405,42 @@ def tts_generate():
     is_tts_ready = True  # 指示TTS已经准备好回复下一个问题
 
 
+# 表情加入:使用键盘控制VTube
 def emote_show(response):
-    # 表情加入:使用键盘控制VTube
     keyboard = Controller()
     # =========== 开心 ==============
     text = ["笑", "不错", "哈", "开心", "呵", "嘻"]
-    emote_thread1 = threading.Thread(
-        target=emote_do(text, response, keyboard, 0.2, Key.f1)
+    emote_thread1 = Thread(
+        target=emote_do, args=(text, response, keyboard, 0.2, Key.f1)
     )
     emote_thread1.start()
     # =========== 招呼 ==============
     text = ["你好", "在吗", "干嘛", "名字", "欢迎"]
-    emote_thread2 = threading.Thread(
-        target=emote_do(text, response, keyboard, 0.2, Key.f2)
+    emote_thread2 = Thread(
+        target=emote_do, args=(text, response, keyboard, 0.2, Key.f2)
     )
     emote_thread2.start()
     # =========== 生气 ==============
     text = ["生气", "不理你", "骂", "臭", "打死", "可恶", "白痴", "忘记"]
-    emote_thread3 = threading.Thread(
-        target=emote_do(text, response, keyboard, 0.2, Key.f3)
+    emote_thread3 = Thread(
+        target=emote_do, args=(text, response, keyboard, 0.2, Key.f3)
     )
     emote_thread3.start()
     # =========== 尴尬 ==============
     text = ["尴尬", "无聊", "无奈", "傻子", "郁闷", "龟蛋"]
-    emote_thread4 = threading.Thread(
-        target=emote_do(text, response, keyboard, 0.2, Key.f4)
+    emote_thread4 = Thread(
+        target=emote_do, args=(text, response, keyboard, 0.2, Key.f4)
     )
     emote_thread4.start()
     # =========== 认同 ==============
     text = ["认同", "点头", "嗯", "哦", "女仆"]
-    emote_thread5 = threading.Thread(
-        target=emote_do(text, response, keyboard, 0.2, Key.f5)
+    emote_thread5 = Thread(
+        target=emote_do, args=(text, response, keyboard, 0.2, Key.f5)
     )
     emote_thread5.start()
 
 
+# 键盘触发-带按键时长
 def emote_do(text, response, keyboard, startTime, key):
     num = is_array_contain_string(text, response)
     if num > 0:
@@ -360,6 +452,7 @@ def emote_do(text, response, keyboard, startTime, key):
         print(f"{response}:输出表情({start}){key}")
 
 
+# 判断字符位置（不含搜索字符）- 如，搜索“画画女孩”，则输出“女孩”位置
 def is_index_contain_string(string_array, target_string):
     i = 0
     for s in string_array:
@@ -370,6 +463,7 @@ def is_index_contain_string(string_array, target_string):
     return 0
 
 
+# 判断字符位置（含搜索字符）- 如，搜索“画画女孩”，则输出“画画女孩”位置
 def is_array_contain_string(string_array, target_string):
     i = 0
     for s in string_array:
@@ -379,6 +473,7 @@ def is_array_contain_string(string_array, target_string):
     return 0
 
 
+# 播放器mpv线程
 def check_mpv():
     """
     若mpv已经播放完毕且播放列表中有数据 则创建一个播放音频的线程
@@ -388,10 +483,11 @@ def check_mpv():
     global MpvList
     if not MpvList.empty() and is_mpv_ready:
         is_mpv_ready = False
-        tts_thread = threading.Thread(target=mpv_read())
+        tts_thread = threading.Thread(target=mpv_read)
         tts_thread.start()
 
 
+# 播放器mpv播放任务
 def mpv_read():
     """
     按照MpvList内的名单播放音频直到播放完毕
@@ -403,9 +499,8 @@ def mpv_read():
         temp1 = MpvList.get()
         current_mpvlist_count = MpvList.qsize()
 
-        # 表情加入:使用键盘控制VTube
         response = EmoteList.get()
-        emote_thread = threading.Thread(target=emote_show(response))
+        emote_thread = Thread(target=emote_show(response))
         emote_thread.start()
 
         print(
@@ -439,6 +534,7 @@ def check_draw():
 def draw(prompt, username):
     global is_drawing
     global AnswerList
+    global CameraOutList
     url = "http://127.0.0.1:7860"
     payload = {
         "prompt": prompt,
@@ -517,7 +613,7 @@ def outCamera():
 
 def main():
     # 唤起虚拟摄像头
-    outCamera_thread = threading.Thread(target=outCamera)
+    outCamera_thread = Thread(target=outCamera)
     outCamera_thread.start()
     # LLM回复
     sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
@@ -527,6 +623,10 @@ def main():
     sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
     # 绘画
     sched1.add_job(check_draw, "interval", seconds=1, id=f"draw", max_instances=4)
+    # 搜图
+    sched1.add_job(
+        check_img_search, "interval", seconds=1, id=f"img_search", max_instances=4
+    )
     sched1.start()
     # 开始监听弹幕流
     sync(room.connect())
