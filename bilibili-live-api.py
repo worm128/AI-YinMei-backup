@@ -1,4 +1,5 @@
 # b站AI直播对接text-generation-webui聚合文本LLM模型
+import json
 import datetime
 import queue
 import subprocess
@@ -12,6 +13,7 @@ import base64
 import numpy as np
 import io
 import random
+import re
 from io import BytesIO
 from PIL import Image
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -55,6 +57,7 @@ enable_role = False  # 是否启用扮演模式
 
 # ============= 本地模型加载 =====================
 is_local_llm = int(input("是否使用本地LLM模型(1.是 0.否): ") or "0")
+tgwUrl = "127.0.0.1:5000"
 if is_local_llm == 1:
     # AI基础模型路径
     model_path = "ChatGLM2/THUDM/chatglm2-6b"
@@ -75,6 +78,7 @@ if is_local_llm == 1:
 # ============================================
 
 # ============= 绘画参数 =====================
+drawUrl = "192.168.2.58:7860"
 is_drawing = 2  # 1.绘画中 2.绘画完成
 steps = 35
 width = 730  # 图片宽度
@@ -88,11 +92,18 @@ SearchImgList = queue.Queue()
 is_SearchImg = 2  # 1.搜图中 2.搜图完成
 # ============================================
 
+# ============= 唱歌参数 =====================
+singUrl = "192.168.2.58:1717"
+SongQueueList = queue.Queue()  # 唱歌队列
+is_singing = 2  # 1.唱歌中 2.唱歌完成
+is_creating_song = 2  # 1.生成中 2.生成完毕
+# ============================================
+
 # ============= B站直播间 =====================
 # b站直播身份验证：实例化 Credential 类
 cred = Credential(
-    sessdata="",
-    buvid3="",
+    sessdata="7902dd8c,1720840205,1104d*12CjCJAjfSdasXo9KQlKTbZ8PSibPglNZLH7XLk3A7CY-aVbixrz5dp41XtXMEDnMHzBQSVlVvazAxZG1RWDF3X0lUV1U4Q29LLUF3NjNRQ3hMOEhOcTdLN0lzSENiSGk4R1Jyb3lpMTM1OXVjVjdIV2dSUkNJdU5JQ2hJVXh2eUdSWThjd1lhM0NBIIEC",
+    buvid3="0A13475A-402F-CB81-5E03-E1E992C5FF7C86303infoc",
 )
 room_id = int(input("输入你的B站直播间编号: ") or "3033646")  # 输入直播间编号
 room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
@@ -139,7 +150,7 @@ async def input_msg(event):
 # text-generation-webui接口调用-LLM回复
 # mode:instruct/chat/chat-instruct  preset:Alpaca/Winlone(自定义)  character:角色卡Rengoku/Ninya
 def chat_tgw(content, character, mode, preset):
-    url = "http://127.0.0.1:5000/v1/chat/completions"
+    url = f"http://{tgwUrl}/v1/chat/completions"
     headers = {"Content-Type": "application/json"}
     history.append({"role": "user", "content": content})
     data = {
@@ -180,6 +191,11 @@ def ai_response():
     global QuestionName
     global LogsList
     global history
+
+    global SearchImgList
+    global DrawQueueList
+    global SongQueueList
+
     query = QuestionList.get()
     user_name = QuestionName.get()
     ques = LogsList.get()
@@ -195,9 +211,13 @@ def ai_response():
         print("搜索词：" + queryExtract)
         searchStr = web_search(queryExtract)
         if searchStr != "":
-            prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
-            print(f"重置提问:{prompt}")
-            is_query = True
+            # prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
+            # print(f"重置提问:{prompt}")
+            # is_query = True
+            AnswerList.put(f"回复{user_name}：我搜索到的内容如下：{searchStr}")
+            is_query = False
+            is_ai_ready = True  # 指示AI已经准备好回复下一个问题
+            return
 
     # 搜索图片
     text = ["搜图", "搜个图", "搜图片", "搜一下图片"]
@@ -220,6 +240,18 @@ def ai_response():
         draw_json = {"prompt": queryExtract, "username": user_name}
         # 加入绘画队列
         DrawQueueList.put(draw_json)
+        is_query = False
+        is_ai_ready = True  # 指示AI已经准备好回复下一个问题
+        return
+
+    # 唱歌
+    text = ["唱一下", "唱一首", "唱歌", "唱"]
+    num = is_index_contain_string(text, query)
+    if num > 0:
+        queryExtract = query[num : len(query)]  # 提取提问语句
+        print("唱歌提示：" + queryExtract)
+        song_json = {"prompt": queryExtract, "username": user_name}
+        SongQueueList.put(song_json)
         is_query = False
         is_ai_ready = True  # 指示AI已经准备好回复下一个问题
         return
@@ -260,7 +292,7 @@ def web_search(query):
             region="cn-zh",
             timelimit="d",
             backend="api",
-            max_results=3,
+            max_results=1,
         ):
             print("搜索内容：" + r["body"])
             content = content + r["body"]
@@ -507,10 +539,134 @@ def mpv_read():
             f"\033[32mSystem>>\033[0m开始播放output{temp1}.mp3，当前待播语音数：{current_mpvlist_count}"
         )
         subprocess.run(
-            f"mpv.exe -vo null .\output\output{temp1}.mp3 1>nul", shell=True
-        )  # 执行命令行指令
+            f"mpv.exe -vo null --volume=100 .\output\output{temp1}.mp3 1>nul",
+            shell=True,
+        )
+        # 执行命令行指令
         subprocess.run(f"del /f .\output\output{temp1}.mp3 1>nul", shell=True)
     is_mpv_ready = True
+
+
+# 播放器播放
+def song_read(song_path):
+    global is_mpv_ready
+    while is_mpv_ready:
+        # end：播放多少秒结束  volume：音量，最大100，最小0
+        subprocess.run(
+            f'mpv.exe -vo null --volume=60 --start=0 --end=120 "{song_path}" 1>nul',
+            shell=True,
+        )
+        return
+
+
+# 唱歌线程
+def check_sing():
+    global is_singing
+    global SongQueueList
+    if not SongQueueList.empty():
+        song_json = SongQueueList.get()
+        print(f"启动唱歌:{song_json}")
+        # 启动唱歌
+        sing_thread = Thread(
+            target=sing, args=(song_json["prompt"], song_json["username"])
+        )
+        sing_thread.start()
+
+
+# 唱歌
+def sing(songname, username):
+    global is_singing
+    global is_creating_song
+    is_created = 0  # 1.已经生成过 0.没有生成过
+    song_path = f"./output/{songname}.wav"
+
+    # =============== 开始-保存已经存在的歌曲 =================
+    # 下载歌曲
+    downfile, is_created, songname = check_down_song(songname)
+    if downfile is not None and is_created == 1:
+        song_path = f"./output/{songname}.wav"  # 纠正歌名路径
+        with open(song_path, "wb") as f:
+            f.write(downfile.content)
+            print(f"找到已经存在的歌曲《{songname}》")
+    # =============== 结束-保存已经存在的歌曲 =================
+
+    # =============== 开始：如果不存在歌曲，生成歌曲 =================
+    if is_created == 0:
+        # 其他歌曲在生成的时候等待
+        while is_creating_song == 1:
+            time.sleep(1)
+        # =============== 开始生成歌曲 =================
+        is_creating_song = 1
+        # 生成歌曲接口
+        jsonStr = requests.get(url=f"http://{singUrl}/append_song/{songname}")
+        status_json = json.loads(jsonStr.text)
+        status = status_json["status"]
+        songname = status_json["songName"]
+        print(f"准备生成歌曲内容：{status_json}")
+        if status > 0:
+            timout = 600  # 生成歌曲等待时间
+            i = 0
+            while downfile is None:
+                # 检查歌曲是否生成成功
+                downfile, is_created, songname = check_down_song(songname)
+                # 本地保存歌曲
+                if downfile is not None and is_created == 1:
+                    song_path = f"./output/{songname}.wav"  # 纠正歌名路径
+                    with open(song_path, "wb") as f:
+                        f.write(downfile.content)
+                i = i + 1
+                if i >= timout:
+                    break
+                print(f"生成《{songname}》歌曲第[{i}]秒,生成状态:{is_created}")
+                time.sleep(1)
+        is_creating_song = 2
+        # =============== 结束生成歌曲 =================
+    # =============== 结束：如果不存在歌曲，生成歌曲 =================
+
+    # 等待播放
+    while is_singing == 1:
+        time.sleep(1)
+    # 播放歌曲
+    is_singing = 1  # 开始唱歌
+    if is_created == 1:
+        print(f"准备唱歌《{songname}》,播放路径:{song_path}")
+        # 加入回复列表，并且后续合成语音
+        AnswerList.put(f"回复{username}：我准备唱一首歌《{songname}》")
+        time.sleep(3)
+        # 调用mpv播放器
+        song_read(song_path)
+    else:
+        print(f"找不到歌曲《{songname}》")
+        # 加入回复列表，并且后续合成语音
+        AnswerList.put(f"回复{username}：我没有找到相关歌曲《{songname}》")
+    is_singing = 2  # 完成唱歌
+
+
+# 匹配已生成的歌曲，并返回字节流
+def check_down_song(songname):
+    # 查看歌曲是否曾经生成
+    status = requests.get(url=f"http://{singUrl}/status")
+    converted_json = json.loads(status.text)
+    converted_file = converted_json["converted_file"]  # 生成歌曲硬盘文件
+    is_created = 0  # 1.已经生成过 0.没有生成过
+    realSongName = songname
+    # 优先：精确匹配文件名
+    for filename in converted_file:
+        if songname == filename:
+            is_created = 1
+            realSongName = filename
+            break
+    # 次要：模糊匹配文件名
+    for filename in converted_file:
+        if re.search(songname, filename):
+            is_created = 1
+            realSongName = filename
+            break
+
+    if is_created == 1:
+        downfile = requests.get(url=f"http://{singUrl}/get_audio/{realSongName}")
+        return downfile, is_created, realSongName
+    return None, is_created, realSongName
 
 
 # 绘画任务队列
@@ -535,12 +691,22 @@ def draw(prompt, username):
     global is_drawing
     global AnswerList
     global CameraOutList
-    url = "http://127.0.0.1:7860"
+    checkpoint = "aingdiffusion_v13"
+    negative_prompt = "EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)"
+    parm_prompt = prompt
+    # 迪迦奥特曼
+    if (
+        is_array_contain_string(prompt, "迪迦") > 0
+        or is_array_contain_string(prompt, "奥特曼") > 0
+    ):
+        checkpoint = "chilloutmix_NiPrunedFp32Fix"
+        parm_prompt = "masterpiece, best quality, 1boy, alien, male focus, solo, 1boy, tokusatsu,full body, (giant), railing, glowing eyes, glowing, from below , white eyes,night, <lora:dijia:1> ,city,building,(Damaged buildings:1.3),tiltshift,(ruins:1.4)"
+
     payload = {
-        "prompt": prompt,
-        "negative_prompt": "EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)",
-        "hr_checkpoint_name": "aingdiffusion_v13",
-        "refiner_checkpoint": "aingdiffusion_v13",
+        "prompt": parm_prompt,
+        "negative_prompt": negative_prompt,
+        "hr_checkpoint_name": checkpoint,
+        "refiner_checkpoint": checkpoint,
         "sampler_index": "DPM++ SDE Karras",
         "steps": steps,
         "cfg_scale": 7,
@@ -551,7 +717,7 @@ def draw(prompt, username):
 
     # stable-diffusion绘图
     is_drawing = 1
-    response = requests.post(url=f"{url}/sdapi/v1/txt2img", json=payload)
+    response = requests.post(url=f"http://{drawUrl}/sdapi/v1/txt2img", json=payload)
     is_drawing = 2
     r = response.json()
     # 读取二进制字节流
@@ -574,9 +740,8 @@ def progress():
     while True:
         # 绘画中：输出进度图
         if is_drawing == 1:
-            url = "http://127.0.0.1:7860"
             # stable-diffusion绘图进度
-            response = requests.get(url=f"{url}/sdapi/v1/progress")
+            response = requests.get(url=f"http://{drawUrl}/sdapi/v1/progress")
             r = response.json()
             imgstr = r["current_image"]
             if imgstr != "" and imgstr is not None:
@@ -627,6 +792,8 @@ def main():
     sched1.add_job(
         check_img_search, "interval", seconds=1, id=f"img_search", max_instances=4
     )
+    # 唱歌
+    sched1.add_job(check_sing, "interval", seconds=1, id=f"sing", max_instances=4)
     sched1.start()
     # 开始监听弹幕流
     sync(room.connect())

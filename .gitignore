@@ -12,3 +12,5 @@ LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora
 LLaMA-Factory/data
 *logs/
 *data/
+output/
+*.wav
