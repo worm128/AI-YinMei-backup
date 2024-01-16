@@ -578,13 +578,18 @@ def sing(songname, username):
     global is_singing
     global is_creating_song
     is_created = 0  # 1.已经生成过 0.没有生成过
+    
+    # =============== 开始-获取真实歌曲名称 =================
+    musicJson = requests.get(url=f"http://{singUrl}/musicInfo/{songname}")
+    music_json = json.loads(musicJson.text)
+    songname = music_json["songName"]
     song_path = f"./output/{songname}.wav"
+    # =============== 结束-获取真实歌曲名称 =================
 
     # =============== 开始-保存已经存在的歌曲 =================
-    # 下载歌曲
-    downfile, is_created, songname = check_down_song(songname)
+    # 下载歌曲：这里网易歌库返回songname和用户的模糊搜索可能歌名不同
+    downfile, is_created = check_down_song(songname)
     if downfile is not None and is_created == 1:
-        song_path = f"./output/{songname}.wav"  # 纠正歌名路径
         with open(song_path, "wb") as f:
             f.write(downfile.content)
             print(f"找到已经存在的歌曲《{songname}》")
@@ -600,18 +605,17 @@ def sing(songname, username):
         # 生成歌曲接口
         jsonStr = requests.get(url=f"http://{singUrl}/append_song/{songname}")
         status_json = json.loads(jsonStr.text)
-        status = status_json["status"]
+        status = status_json["status"]  #status: "processing" "processed" "waiting"
         songname = status_json["songName"]
         print(f"准备生成歌曲内容：{status_json}")
-        if status > 0:
+        if status=="processing" or status=="processed":
             timout = 600  # 生成歌曲等待时间
             i = 0
             while downfile is None:
-                # 检查歌曲是否生成成功
-                downfile, is_created, songname = check_down_song(songname)
+                # 检查歌曲是否生成成功：这里网易歌库返回songname和用户的模糊搜索可能歌名不同
+                downfile, is_created = check_down_song(songname)
                 # 本地保存歌曲
                 if downfile is not None and is_created == 1:
-                    song_path = f"./output/{songname}.wav"  # 纠正歌名路径
                     with open(song_path, "wb") as f:
                         f.write(downfile.content)
                 i = i + 1
@@ -649,24 +653,21 @@ def check_down_song(songname):
     converted_json = json.loads(status.text)
     converted_file = converted_json["converted_file"]  # 生成歌曲硬盘文件
     is_created = 0  # 1.已经生成过 0.没有生成过
-    realSongName = songname
     # 优先：精确匹配文件名
     for filename in converted_file:
         if songname == filename:
             is_created = 1
-            realSongName = filename
             break
     # 次要：模糊匹配文件名
     for filename in converted_file:
         if re.search(songname, filename):
             is_created = 1
-            realSongName = filename
             break
 
     if is_created == 1:
-        downfile = requests.get(url=f"http://{singUrl}/get_audio/{realSongName}")
-        return downfile, is_created, realSongName
-    return None, is_created, realSongName
+        downfile = requests.get(url=f"http://{singUrl}/get_audio/{songname}")
+        return downfile, is_created
+    return None, is_created
 
 
 # 绘画任务队列
