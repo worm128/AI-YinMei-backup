@@ -56,6 +56,11 @@ with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
     for r in ddgs_images_gen:
         print(r)
 
+with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
+    keywords = '炭治郎'
+    r = ddgs.translate(keywords,from_="zh-Hans", to="en")
+    print(r)
+
 # with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
 #     with pyvirtualcam.Camera(width, height, device="OBS Virtual Camera", fps=20) as cam:
 #         print(f"输出虚拟摄像头: {cam.device}")

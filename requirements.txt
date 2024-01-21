@@ -7,3 +7,5 @@ pyvirtualcam
 opencv-python
 numpy
 Pillow
+simplejson
+websocket-client

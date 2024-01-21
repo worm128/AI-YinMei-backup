@@ -14,6 +14,9 @@ import numpy as np
 import io
 import random
 import re
+import traceback
+import websocket
+
 from io import BytesIO
 from PIL import Image
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -24,6 +27,8 @@ from threading import Thread
 from peft import PeftModel
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 from urllib.parse import quote
+from flask import Flask, jsonify, request
+from flask_apscheduler import APScheduler
 
 print("=====================================================================")
 print("开始启动人工智能吟美！")
@@ -36,8 +41,17 @@ print("=====================================================================")
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 sched1 = AsyncIOScheduler(timezone="Asia/Shanghai")
-proxies = {"http": "socks5://127.0.0.1:10806", "https": "socks5://127.0.0.1:10806"}
+#1.b站直播间 2.api web 3.双开
+mode=int(input("1.b站直播间 2.api web 3.双开: ") or "2")
 
+#代理
+proxies = {"http": "socks5://127.0.0.1:10806", "https": "socks5://127.0.0.1:10806"}
+duckduckgo_proxies="socks5://127.0.0.1:10806"
+
+#线程锁
+create_song_lock = threading.Lock()
+play_song_lock = threading.Lock()
+say_lock = threading.Lock()
 # ============= LLM参数 =====================
 QuestionList = queue.Queue(10)  # 定义问题 用户名 回复 播放列表 四个先进先出队列
 QuestionName = queue.Queue(10)
@@ -50,6 +64,7 @@ is_ai_ready = True  # 定义ai回复是否转换完成标志
 is_tts_ready = True  # 定义语音是否生成完成标志
 is_mpv_ready = True  # 定义是否播放完成标志
 AudioCount = 0
+SayCount = 0
 enable_history = False  # 是否启用记忆
 history_count = 2  # 定义最大对话记忆轮数,请注意这个数值不包括扮演设置消耗的轮数，只有当enable_history为True时生效
 enable_role = False  # 是否启用扮演模式
@@ -57,7 +72,7 @@ enable_role = False  # 是否启用扮演模式
 
 # ============= 本地模型加载 =====================
 is_local_llm = int(input("是否使用本地LLM模型(1.是 0.否): ") or "0")
-tgwUrl = "127.0.0.1:5000"
+tgwUrl = "192.168.2.58:5000"
 if is_local_llm == 1:
     # AI基础模型路径
     model_path = "ChatGLM2/THUDM/chatglm2-6b"
@@ -79,8 +94,7 @@ if is_local_llm == 1:
 
 # ============= 绘画参数 =====================
 drawUrl = "192.168.2.58:7860"
-is_drawing = 2  # 1.绘画中 2.绘画完成
-steps = 35
+is_drawing = 3  # 1.绘画中 2.绘画完成 3.绘画任务结束
 width = 730  # 图片宽度
 height = 470  # 图片高度
 CameraOutList = queue.Queue()  # 输出图片队列
@@ -92,6 +106,11 @@ SearchImgList = queue.Queue()
 is_SearchImg = 2  # 1.搜图中 2.搜图完成
 # ============================================
 
+# ============= 搜文参数 =====================
+SearchTextList = queue.Queue()
+is_SearchText = 2  # 1.搜文中 2.搜文完成
+# ============================================
+
 # ============= 唱歌参数 =====================
 singUrl = "192.168.2.58:1717"
 SongQueueList = queue.Queue()  # 唱歌队列
@@ -100,52 +119,188 @@ is_creating_song = 2  # 1.生成中 2.生成完毕
 # ============================================
 
 # ============= B站直播间 =====================
-# b站直播身份验证：实例化 Credential 类
+# b站直播身份验证：
+#实例化 Credential 类
 cred = Credential(
-    sessdata="",
-    buvid3="",
+    sessdata="c743c891%2C1721135476%2C814be%2A11CjDT8r07mYmnbyG-Q-NZ3eKPse-DJxx8-TDhDBxJzOWSCF_XuY8T-GS6nxwvjdWut5sSVkg1UF83Rm9qWXZoQXRMMnBhNXNlbVo3VkVoTk5LbG1EbWczYkRpSEhwSUpOS1MtWEJHTWNRNVkyNnBheHI2LXV0aUYxQ1k0enJRWUE2MC1XNmYxZ0FBIIEC",
+    buvid3="C08180D1-DDCD-1766-0162-FB77DF0BDAE597566infoc",
 )
-room_id = int(input("输入你的B站直播间编号: ") or "3033646")  # 输入直播间编号
+room_id = int(input("输入你的B站直播间编号: ") or "31814714")  # 输入直播间编号
 room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
 # ============================================
 
+# ============= api web =====================
+app = Flask(__name__)
+if mode==2:
+   sched1 = APScheduler()
+   sched1.init_app(app)
+# ============================================
+   
+# ============= Vtuber表情 =====================
+def run_forever():
+    ws.run_forever(ping_timeout=1)
+def on_open(ws):
+    auth()
+ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
+# ============================================
+
+# ============= 鉴黄 =====================
+filterEn="huge breasts,open clothes,topless,voluptuous,breast,prostitution,erotic,armpit,milk,leaking,spraying,woman,cupless latex,latex,tits,boobs,lingerie,chest,seductive,poses,pose,leg,posture,alluring,milf,on bed,mature,slime,open leg,full body,bra,lace,bikini,full nude,nude,bare,one-piece,navel,cleavage,swimsuit,naked,adult,nudity,beautiful breasts,nipples,sex,Sexual,vaginal,penis,large penis,pantie,leotards,anal"
+filterCh="屁股,奶子,乳房,乳胶,乳,胸,劈叉,狗日,走光,底裤,比基尼,女优,男优,妓,嫖娼,黄片,淫荡,性感,性爱,做爱,裸体,赤裸,破处,丝袜,肛门"
+progress_limit=10   #绘图大于多少百分比进行鉴黄
+nsfw_limit=0.2  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
+# ============================================
 
 print("--------------------")
 print("AI虚拟主播-启动成功！")
 print("--------------------")
 
-
-@room.on("INTERACT_WORD")  # 用户进入直播间
+# 用户进入直播间
+@room.on("INTERACT_WORD")
 async def in_liveroom(event):
-    global is_ai_ready
     user_name = event["data"]["data"]["uname"]  # 获取用户昵称
-    time1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    time1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
     print(f"{time1}:粉丝\033[36m[{user_name}]\033[0m进入了直播间")
     # 直接放到语音合成处理
     AnswerList.put(f"欢迎{user_name}来到吟美的直播间")
-
+    # 进入直播间根据用户名绘图
+    draw_json = {"prompt": user_name, "username": user_name}
+    # 加入绘画队列
+    DrawQueueList.put(draw_json)
 
 # B站弹幕处理
 @room.on("DANMU_MSG")  # 弹幕消息事件回调函数
 async def input_msg(event):
+    query = event["data"]["info"][1]  # 获取弹幕内容
+    user_name = event["data"]["info"][2][1]  # 获取用户昵称
+    msg_deal(query,user_name)
+
+# http接口处理
+@app.route("/msg", methods=["POST"])
+def input_msg():
+    data = request.json
+    query = data["msg"]  # 获取弹幕内容
+    user_name = data["username"]  # 获取用户昵称
+    msg_deal(query,user_name)
+    return jsonify({"status": "成功"})
+
+def msg_deal(query,user_name):
     """
     处理弹幕消息
     """
     global QuestionList
     global QuestionName
     global LogsList
-    content = event["data"]["info"][1]  # 获取弹幕内容
-    user_name = event["data"]["info"][2][1]  # 获取用户昵称
-    print(f"\033[36m[{user_name}]\033[0m:{content}")  # 打印弹幕信息
+
+    query=filter(query,filterCh)
+    print(f"\033[36m[{user_name}]\033[0m:{query}")  # 打印弹幕信息
     if not QuestionList.full():
-        QuestionName.put(user_name)  # 将用户名放入队列
-        QuestionList.put(content)  # 将弹幕消息放入队列
+        #命令执行
+        status = cmd(query)  
+        if status==1:
+            print(f"执行命令：{query}")
+            return
+        
+        # 说话不执行任务
+        text = ["\\"]
+        num = is_index_contain_string(text, query)  # 判断是不是需要搜索
+        if num > 0:
+            return
+        
+        # 搜索引擎查询
+        text = ["查询", "查一下", "搜索"]
+        num = is_index_contain_string(text, query)  # 判断是不是需要搜索
+        if num > 0:
+            queryExtract = query[num : len(query)]  # 提取提问语句
+            print("搜索词：" + queryExtract)
+            # prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
+            # print(f"重置提问:{prompt}")
+            # is_query = True
+            if queryExtract=="":
+               return
+            text_search_json = {"prompt": queryExtract, "username": user_name}
+            SearchTextList.put(text_search_json)
+            return
+
+        # 搜索图片
+        text = ["搜图", "搜个图", "搜图片", "搜一下图片"]
+        num = is_index_contain_string(text, query)  # 判断是不是需要搜索
+        if num > 0:
+            queryExtract = query[num : len(query)]  # 提取提问语句
+            print("搜索图：" + queryExtract)
+            if queryExtract=="":
+               return
+            img_search_json = {"prompt": queryExtract, "username": user_name}
+            SearchImgList.put(img_search_json)
+            return
+
+        # 绘画
+        text = ["画画", "画一个", "画一下", "画个"]
+        num = is_index_contain_string(text, query)
+        if num > 0:
+            queryExtract = query[num : len(query)]  # 提取提问语句
+            print("绘画提示：" + queryExtract)
+            if queryExtract=="":
+               return
+            draw_json = {"prompt": queryExtract, "username": user_name}
+            # 加入绘画队列
+            DrawQueueList.put(draw_json)
+            return
+
+        # 唱歌
+        text = ["唱一下", "唱一首", "唱歌", "唱"]
+        num = is_index_contain_string(text, query)
+        if num > 0:
+            queryExtract = query[num : len(query)]  # 提取提问语句
+            print("唱歌提示：" + queryExtract)
+            song_json = {"prompt": queryExtract, "username": user_name}
+            SongQueueList.put(song_json)
+            return
+        
+        #询问LLM
+        # QuestionName.put(user_name)  # 将用户名放入队列
+        # QuestionList.put(query)  # 将弹幕消息放入队列
+        # 默认画画
+        # queryExtract = query[num : len(query)]  # 提取提问语句
+        # print("绘画提示：" + queryExtract)
+        # draw_json = {"prompt": queryExtract, "username": user_name}
+        # # 加入绘画队列
+        # DrawQueueList.put(draw_json)
+
         time1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        LogsList.put(f"[{time1}] [{user_name}]：{content}")
+        LogsList.put(f"[{time1}] [{user_name}]：{query}")
         print("\033[32mSystem>>\033[0m已将该条弹幕添加入问题队列")
     else:
         print("\033[32mSystem>>\033[0m队列已满，该条弹幕被丢弃")
 
+# 命令控制：优先
+def cmd(query):
+    global is_ai_ready
+    global is_singing
+    global is_creating_song
+    global is_SearchImg
+    global is_drawing
+    global is_tts_ready
+    global is_mpv_ready
+
+    # 停止所有任务
+    if query=="\\stop":
+        is_singing = 2  # 1.唱歌中 2.唱歌完成
+        is_creating_song = 2  # 1.生成中 2.生成完毕
+        is_SearchImg = 2  # 1.搜图中 2.搜图完成
+        is_drawing = 3  # 1.绘画中 2.绘画完成 3.绘图任务结束
+        is_ai_ready = True  # 定义ai回复是否转换完成标志
+        is_tts_ready = True  # 定义语音是否生成完成标志
+        is_mpv_ready = True  # 定义是否播放完成标志
+        return 1
+    #下一首歌
+    if query=="\\next":
+        os.system('taskkill /T /F /IM mpv.exe')
+        is_singing = 2  # 1.唱歌中 2.唱歌完成
+        is_creating_song = 2  # 1.生成中 2.生成完毕
+        is_ai_ready = True  # 定义ai回复是否转换完成标志
+        return 1
+    return 0
 
 # text-generation-webui接口调用-LLM回复
 # mode:instruct/chat/chat-instruct  preset:Alpaca/Winlone(自定义)  character:角色卡Rengoku/Ninya
@@ -160,7 +315,7 @@ def chat_tgw(content, character, mode, preset):
         "messages": history,
         "preset": preset,
         "do_sample": True,
-        "truncation_length": 4000,
+        "max_new_tokens":200,
         "seed": -1,
         "add_bos_token": True,
         "ban_eos_token": False,
@@ -178,6 +333,15 @@ def chat_tgw(content, character, mode, preset):
     # history.append({"role": "assistant", "content": assistant_message})
     return assistant_message
 
+# LLM回复
+def aiResponseTry():
+    global is_ai_ready
+    try:
+        ai_response()
+    except Exception as e:
+        print(f"ai_response发生了异常：{e}")
+        traceback.print_exc()
+        is_ai_ready=True
 
 # LLM回复
 def ai_response():
@@ -186,6 +350,13 @@ def ai_response():
     :return:
     """
     global is_ai_ready
+    global is_singing
+    global is_creating_song
+    global is_SearchImg
+    global is_drawing
+    global is_tts_ready
+    global is_mpv_ready
+
     global QuestionList
     global AnswerList
     global QuestionName
@@ -202,65 +373,11 @@ def ai_response():
     prompt = query
     is_query = True  # 是否需要调用LLM True：需要  False：不需要
 
-    # 搜索引擎查询
-    text = ["查询", "查一下", "搜索"]
-    num = is_index_contain_string(text, query)  # 判断是不是需要搜索
-    searchStr = ""
-    if num > 0:
-        queryExtract = query[num : len(query)]  # 提取提问语句
-        print("搜索词：" + queryExtract)
-        searchStr = web_search(queryExtract)
-        if searchStr != "":
-            # prompt = f'帮我在答案"{searchStr}"中提取"{queryExtract}"的信息'
-            # print(f"重置提问:{prompt}")
-            # is_query = True
-            AnswerList.put(f"回复{user_name}：我搜索到的内容如下：{searchStr}")
-            is_query = False
-            is_ai_ready = True  # 指示AI已经准备好回复下一个问题
-            return
-
-    # 搜索图片
-    text = ["搜图", "搜个图", "搜图片", "搜一下图片"]
-    num = is_index_contain_string(text, query)  # 判断是不是需要搜索
-    if num > 0:
-        queryExtract = query[num : len(query)]  # 提取提问语句
-        print("搜索图：" + queryExtract)
-        img_search_json = {"prompt": queryExtract, "username": user_name}
-        SearchImgList.put(img_search_json)
-        is_query = False
-        is_ai_ready = True  # 指示AI已经准备好回复下一个问题
-        return
-
-    # 绘画
-    text = ["画画", "画一个", "画一下", "画个"]
-    num = is_index_contain_string(text, query)
-    if num > 0:
-        queryExtract = query[num : len(query)]  # 提取提问语句
-        print("绘画提示：" + queryExtract)
-        draw_json = {"prompt": queryExtract, "username": user_name}
-        # 加入绘画队列
-        DrawQueueList.put(draw_json)
-        is_query = False
-        is_ai_ready = True  # 指示AI已经准备好回复下一个问题
-        return
-
-    # 唱歌
-    text = ["唱一下", "唱一首", "唱歌", "唱"]
-    num = is_index_contain_string(text, query)
-    if num > 0:
-        queryExtract = query[num : len(query)]  # 提取提问语句
-        print("唱歌提示：" + queryExtract)
-        song_json = {"prompt": queryExtract, "username": user_name}
-        SongQueueList.put(song_json)
-        is_query = False
-        is_ai_ready = True  # 指示AI已经准备好回复下一个问题
-        return
-
     # 询问LLM
     if is_query == True:
         # text-generation-webui
         if is_local_llm == 0:
-            response = chat_tgw(prompt, "yinmei", "chat", "Winlone")
+            response = chat_tgw(prompt, "Aileen Voracious", "chat", "Winlone")
             response = response.replace("You", user_name)
         # 本地LLM
         elif is_local_llm == 1:
@@ -286,16 +403,20 @@ def ai_response():
 # duckduckgo搜索引擎搜索
 def web_search(query):
     content = ""
-    with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
-        for r in ddgs.text(
-            query,
-            region="cn-zh",
-            timelimit="d",
-            backend="api",
-            max_results=1,
-        ):
-            print("搜索内容：" + r["body"])
-            content = content + r["body"]
+    with DDGS(proxies=duckduckgo_proxies, timeout=20) as ddgs:
+        try:
+            for r in ddgs.text(
+                query,
+                region="cn-zh",
+                timelimit="d",
+                backend="api",
+                max_results=1,
+            ):
+                print("搜索内容：" + r["body"])
+                content = content + r["body"]
+        except Exception as e: 
+            print(f"web_search信息回复异常{e}")
+            traceback.print_exc()
     return content
 
 
@@ -303,29 +424,45 @@ def web_search(query):
 def web_search_img(query):
     imageNum = 10
     imgUrl = ""
-    with DDGS(proxies="socks5://localhost:10806", timeout=20) as ddgs:
-        ddgs_images_gen = ddgs.images(
-            query,
-            region="cn-zh",
-            safesearch="off",
-            size="Medium",
-            color="color",
-            type_image=None,
-            layout=None,
-            license_image=None,
-            max_results=imageNum,
-        )
-        i = 0
-        random_number = random.randrange(1, imageNum)
-        for r in ddgs_images_gen:
-            if i == random_number:
-                imgUrl = r["image"]
-                print(f"图片地址：{imgUrl},queryEncode:{query}")
-                break
-            i = i + 1
-
+    with DDGS(proxies=duckduckgo_proxies, timeout=20) as ddgs:
+        try:
+            ddgs_images_gen = ddgs.images(
+                query,
+                region="cn-zh",
+                safesearch="off",
+                size="Medium",
+                color="color",
+                type_image=None,
+                layout=None,
+                license_image=None,
+                max_results=imageNum,
+            )
+            i = 0
+            random_number = random.randrange(1, imageNum)
+            for r in ddgs_images_gen:
+                if i == random_number:
+                    imgUrl = r["image"]
+                    print(f"图片地址：{imgUrl},搜索关键字:{query}")
+                    break
+                i = i + 1
+        except Exception as e: 
+            print(f"web_search_img信息回复异常{e}")
+            traceback.print_exc()
     return imgUrl
 
+# 搜文任务
+def check_text_search():
+    global is_SearchText
+    if not SearchTextList.empty() and is_SearchText == 2:
+        is_SearchText = 1
+        img_text_json = SearchTextList.get()
+        prompt = img_text_json["prompt"]
+        username = img_text_json["username"]
+        searchStr = web_search(prompt)
+        out = f"回复{username}：我搜索到的内容如下：{searchStr}"
+        print(out)
+        AnswerList.put(out)
+        is_SearchText = 2  # 搜文完成
 
 # 搜图任务
 def check_img_search():
@@ -337,6 +474,17 @@ def check_img_search():
         output_img_thead(img_search_json)
         is_SearchImg = 2  # 搜图完成
 
+# 输出图片到虚拟摄像头
+def searchimg_output_camera(prompt):
+    try:
+        imgUrl = web_search_img(prompt)
+        image = output_img(imgUrl)
+        # 虚拟摄像头输出
+        CameraOutList.put(image)
+    except Exception as e:
+        print(f"发生了异常：{e}")
+        traceback.print_exc()
+    return imgUrl
 
 # 搜索引擎-搜图任务
 def output_img_thead(img_search_json):
@@ -345,19 +493,18 @@ def output_img_thead(img_search_json):
     prompt = img_search_json["prompt"]
     username = img_search_json["username"]
     try:
-        imgUrl = web_search_img(prompt)
+        # 搜索并且输出图片到虚拟摄像头
+        imgUrl = searchimg_output_camera(prompt)
         img_search_json2 = {"prompt": prompt, "username": username, "imgUrl": imgUrl}
         print(f"搜图内容:{img_search_json2}")
-        image = output_img(imgUrl)
-        # 虚拟摄像头输出
-        CameraOutList.put(image)
         # 加入回复列表，并且后续合成语音
-        AnswerList.put(f"回复{username}：我给你搜了一张图《{prompt}》")
+        tts_say(f"回复{username}：我给你搜了一张图《{prompt}》")
         time.sleep(10)  # 等待图片展示
     except Exception as e:
-        print(e)
+        print(f"发生了异常：{e}")
+        traceback.print_exc()
     finally:
-        print(f"{username}搜图《{prompt}》结束")
+        print(f"‘{username}’搜图《{prompt}》结束")
 
 
 # 搜图输出虚拟摄像头
@@ -385,7 +532,7 @@ def check_answer():
     global AnswerList
     if not QuestionList.empty() and is_ai_ready:
         is_ai_ready = False
-        answers_thread = Thread(target=ai_response)
+        answers_thread = Thread(target=aiResponseTry)
         answers_thread.start()
 
 
@@ -397,6 +544,25 @@ def check_tts():
         tts_thread = Thread(target=tts_generate)
         tts_thread.start()
 
+# 直接合成语音播放
+def tts_say(text):
+    say_lock.acquire()
+    global SayCount
+    with open(f"./output/say{SayCount}.txt", "w", encoding="utf-8") as f:
+        f.write(f"{text}")  # 将要读的回复写入临时文件
+    subprocess.run(
+        f"edge-tts --voice zh-CN-XiaoxiaoNeural --rate=+20% --f .\output\say{SayCount}.txt --write-media .\output\say{SayCount}.mp3 2>nul",
+        shell=True,
+    )  # 执行命令行指令
+    subprocess.run(
+            f"mpv.exe -vo null --volume=100 .\output\say{SayCount}.mp3 1>nul",
+            shell=True,
+        )
+    # 执行命令行指令
+    subprocess.run(f"del /f .\output\say{SayCount}.mp3 1>nul", shell=True)
+    subprocess.run(f"del /f .\output\say{SayCount}.txt 1>nul", shell=True)
+    SayCount += 1
+    say_lock.release()
 
 # 从回复队列中提取一条，通过edge-tts生成语音对应AudioCount编号语音
 def tts_generate():
@@ -439,35 +605,34 @@ def tts_generate():
 
 # 表情加入:使用键盘控制VTube
 def emote_show(response):
-    keyboard = Controller()
     # =========== 开心 ==============
-    text = ["笑", "不错", "哈", "开心", "呵", "嘻"]
+    text = ["笑", "不错", "哈", "开心", "呵", "嘻", "画"]
     emote_thread1 = Thread(
-        target=emote_do, args=(text, response, keyboard, 0.2, Key.f1)
+        target=emote_ws, args=(text, response,  0.2, "开心")
     )
     emote_thread1.start()
     # =========== 招呼 ==============
-    text = ["你好", "在吗", "干嘛", "名字", "欢迎"]
+    text = ["你好", "在吗", "干嘛", "名字", "欢迎", "搜"]
     emote_thread2 = Thread(
-        target=emote_do, args=(text, response, keyboard, 0.2, Key.f2)
+        target=emote_ws, args=(text, response,  0.2, "招呼")
     )
     emote_thread2.start()
     # =========== 生气 ==============
     text = ["生气", "不理你", "骂", "臭", "打死", "可恶", "白痴", "忘记"]
     emote_thread3 = Thread(
-        target=emote_do, args=(text, response, keyboard, 0.2, Key.f3)
+        target=emote_ws, args=(text, response,  0.2, "生气")
     )
     emote_thread3.start()
     # =========== 尴尬 ==============
     text = ["尴尬", "无聊", "无奈", "傻子", "郁闷", "龟蛋"]
     emote_thread4 = Thread(
-        target=emote_do, args=(text, response, keyboard, 0.2, Key.f4)
+        target=emote_ws, args=(text, response,  0.2, "尴尬")
     )
     emote_thread4.start()
     # =========== 认同 ==============
-    text = ["认同", "点头", "嗯", "哦", "女仆"]
+    text = ["认同", "点头", "嗯", "哦", "女仆", "唱"]
     emote_thread5 = Thread(
-        target=emote_do, args=(text, response, keyboard, 0.2, Key.f5)
+        target=emote_ws, args=(text, response,  0.2, "认同")
     )
     emote_thread5.start()
 
@@ -483,6 +648,23 @@ def emote_do(text, response, keyboard, startTime, key):
         keyboard.release(key)
         print(f"{response}:输出表情({start}){key}")
 
+# ws协议：发送表情到Vtuber
+def emote_ws(text, response, startTime, key):
+    num = is_array_contain_string(text, response)
+    if num > 0:
+        start = round(num * startTime, 2)
+        time.sleep(start)
+        jstr={
+            "apiName": "VTubeStudioPublicAPI",
+            "apiVersion": "1.0",
+            "requestID": "SomeID11",
+            "messageType": "HotkeyTriggerRequest",
+            "data": {
+                "hotkeyID": key
+            }
+        }
+        data=json.dumps(jstr)
+        ws.send(data)
 
 # 判断字符位置（不含搜索字符）- 如，搜索“画画女孩”，则输出“女孩”位置
 def is_index_contain_string(string_array, target_string):
@@ -532,7 +714,7 @@ def mpv_read():
         current_mpvlist_count = MpvList.qsize()
 
         response = EmoteList.get()
-        emote_thread = Thread(target=emote_show(response))
+        emote_thread = Thread(target=emote_show,args=(response,))
         emote_thread.start()
 
         print(
@@ -553,7 +735,7 @@ def song_read(song_path):
     while is_mpv_ready:
         # end：播放多少秒结束  volume：音量，最大100，最小0
         subprocess.run(
-            f'mpv.exe -vo null --volume=60 --start=0 --end=120 "{song_path}" 1>nul',
+            f'mpv.exe -vo null --volume=60 "{song_path}" 1>nul',
             shell=True,
         )
         return
@@ -568,17 +750,29 @@ def check_sing():
         print(f"启动唱歌:{song_json}")
         # 启动唱歌
         sing_thread = Thread(
-            target=sing, args=(song_json["prompt"], song_json["username"])
+            target=singTry, args=(song_json["prompt"], song_json["username"])
         )
         sing_thread.start()
 
+# 唱歌
+def singTry(songname, username):
+    global is_creating_song
+    global is_singing
+    try:
+        if songname!="":
+           sing(songname, username)
+    except Exception as e:
+        print(f"发生了异常：{e}")
+        traceback.print_exc()
+        is_singing = 2
+        is_creating_song=2
 
 # 唱歌
 def sing(songname, username):
     global is_singing
     global is_creating_song
     is_created = 0  # 1.已经生成过 0.没有生成过
-    
+
     # =============== 开始-获取真实歌曲名称 =================
     musicJson = requests.get(url=f"http://{singUrl}/musicInfo/{songname}")
     music_json = json.loads(musicJson.text)
@@ -586,21 +780,44 @@ def sing(songname, username):
     song_path = f"./output/{songname}.wav"
     # =============== 结束-获取真实歌曲名称 =================
 
-    # =============== 开始-保存已经存在的歌曲 =================
+    # =============== 开始-判断本地是否有歌 =================
+    if os.path.exists(song_path):
+        print(f"找到存在本地歌曲:{song_path}")
+        is_created = 1
+    # =============== 结束-判断本地是否有歌 =================
+    else:
+    # =============== 开始-调用已经转换的歌曲 =================
     # 下载歌曲：这里网易歌库返回songname和用户的模糊搜索可能歌名不同
-    downfile, is_created = check_down_song(songname)
-    if downfile is not None and is_created == 1:
-        with open(song_path, "wb") as f:
-            f.write(downfile.content)
-            print(f"找到已经存在的歌曲《{songname}》")
-    # =============== 结束-保存已经存在的歌曲 =================
+        downfile, is_created = check_down_song(songname)
+        if downfile is not None and is_created == 1:
+            with open(song_path, "wb") as f:
+                f.write(downfile.content)
+                print(f"找到服务已经转换的歌曲《{songname}》")
+    # =============== 结束-调用已经转换的歌曲 =================
 
     # =============== 开始：如果不存在歌曲，生成歌曲 =================
     if is_created == 0:
+        print(f"歌曲不存在，需要生成歌曲《{songname}》")
         # 其他歌曲在生成的时候等待
         while is_creating_song == 1:
             time.sleep(1)
+        is_created=create_song(songname,song_path,is_created,downfile)
+    # =============== 结束：如果不存在歌曲，生成歌曲 =================
+
+    #等待播放
+    print(f"等待播放{username}点播的歌曲《{songname}》：{is_singing}")
+    while is_singing == 1:
+        time.sleep(1)
+    # =============== 开始：播放歌曲 =================
+    play_song(is_created,songname,song_path,username)
+    # =============== 结束：播放歌曲 =================   
+
+#开始生成歌曲
+def create_song(songname,song_path,is_created,downfile):
+    global is_creating_song
+    try:
         # =============== 开始生成歌曲 =================
+        create_song_lock.acquire()
         is_creating_song = 1
         # 生成歌曲接口
         jsonStr = requests.get(url=f"http://{singUrl}/append_song/{songname}")
@@ -608,10 +825,10 @@ def sing(songname, username):
         status = status_json["status"]  #status: "processing" "processed" "waiting"
         songname = status_json["songName"]
         print(f"准备生成歌曲内容：{status_json}")
-        if status=="processing" or status=="processed":
-            timout = 600  # 生成歌曲等待时间
+        if status=="processing" or status=="processed" or status=="waiting":
+            timout = 2400  # 生成歌曲等待时间
             i = 0
-            while downfile is None:
+            while downfile is None and is_creating_song==1:
                 # 检查歌曲是否生成成功：这里网易歌库返回songname和用户的模糊搜索可能歌名不同
                 downfile, is_created = check_down_song(songname)
                 # 本地保存歌曲
@@ -623,28 +840,44 @@ def sing(songname, username):
                     break
                 print(f"生成《{songname}》歌曲第[{i}]秒,生成状态:{is_created}")
                 time.sleep(1)
-        is_creating_song = 2
         # =============== 结束生成歌曲 =================
-    # =============== 结束：如果不存在歌曲，生成歌曲 =================
+    except Exception as e:
+        print(f"《{songname}》create_song异常{e}")
+        return 2
+    finally:
+        is_creating_song = 2
+        create_song_lock.release()
+    return is_created
 
-    # 等待播放
-    while is_singing == 1:
-        time.sleep(1)
-    # 播放歌曲
-    is_singing = 1  # 开始唱歌
-    if is_created == 1:
-        print(f"准备唱歌《{songname}》,播放路径:{song_path}")
-        # 加入回复列表，并且后续合成语音
-        AnswerList.put(f"回复{username}：我准备唱一首歌《{songname}》")
-        time.sleep(3)
-        # 调用mpv播放器
-        song_read(song_path)
-    else:
-        print(f"找不到歌曲《{songname}》")
-        # 加入回复列表，并且后续合成语音
-        AnswerList.put(f"回复{username}：我没有找到相关歌曲《{songname}》")
-    is_singing = 2  # 完成唱歌
-
+# 播放歌曲
+def play_song(is_created,songname,song_path,username):
+    global is_singing
+    try:
+        play_song_lock.acquire()
+        # 播放歌曲
+        is_singing = 1  # 开始唱歌
+        if is_created == 1:
+            print(f"准备唱歌《{songname}》,播放路径:{song_path}")
+            # =============== 开始-触发搜图 =================
+            searchimg_output_camera_thread = Thread(target=searchimg_output_camera,args=(songname,))
+            searchimg_output_camera_thread.start()
+            # =============== 结束-触发搜图 =================
+            # 播报唱歌文字
+            tts_say(f"回复{username}：我准备唱一首歌《{songname}》")
+            # 调用mpv播放器
+            song_read(song_path)
+        else:
+            tip=f"已经跳过歌曲《{songname}》，请稍后再点播"
+            print(tip)
+            # 加入回复列表，并且后续合成语音
+            tts_say(f"回复{username}：{tip}")
+    except Exception as e:
+        print(f"《{songname}》play_song异常{e}")
+        return 2
+    finally:
+        is_singing = 2  # 完成唱歌
+        play_song_lock.release()
+    return is_singing
 
 # 匹配已生成的歌曲，并返回字节流
 def check_down_song(songname):
@@ -658,23 +891,142 @@ def check_down_song(songname):
         if songname == filename:
             is_created = 1
             break
-    # 次要：模糊匹配文件名
-    for filename in converted_file:
-        if re.search(songname, filename):
-            is_created = 1
-            break
 
     if is_created == 1:
         downfile = requests.get(url=f"http://{singUrl}/get_audio/{songname}")
         return downfile, is_created
     return None, is_created
 
+#翻译
+def translate(text):
+    with DDGS(proxies=duckduckgo_proxies, timeout=20) as ddgs:
+        try:
+            r = ddgs.translate(text,from_="zh-Hans", to="en")
+            print(f"翻译：{r}")
+            return r
+        except Exception as e: 
+            print(f"translate信息回复异常{e}")
+            traceback.print_exc()
+        return text
+
+# 抽取固定扩展提示词：limit:限制条数  num:抽取次数
+def draw_prompt_do(query,limit,num):
+    offset=0
+    jsonEnd=[]
+    for i in range(num):
+        json = draw_prompt(query,0,100)
+        jsonEnd=jsonEnd.append(json)
+        if len(jsonEnd)>=limit:
+           jsonEnd=json[:limit]
+           return jsonEnd
+        print(f"{query}抽取:"+len(jsonEnd))
+        i=i+1
+        offset=offset+limit
+    return jsonEnd
+        
+
+# 扩展提示词
+def draw_prompt(query,offset,limit):
+    url="http://meilisearch-v1-6.civitai.com/multi-search"
+    headers = {"Authorization": "Bearer 102312c2b83ea0ef9ac32e7858f742721bbfd7319a957272e746f84fd1e974af"}
+    #排序："stats.commentCountAllTime:desc","stats.collectedCountAllTime:desc"
+    payload = {
+        "queries": [
+            {
+                "attributesToHighlight": [],
+                "facets": [
+                    "aspectRatio",
+                    "baseModel",
+                    "createdAtUnix",
+                    "generationTool",
+                    "tags.name",
+                    "user.username"
+                ],
+                "highlightPostTag": "__/ais-highlight__",
+                "highlightPreTag": "__ais-highlight__",
+                "indexUid": "images_v3",
+                "limit": limit,
+                "offset": offset,
+                "q": query
+            }
+        ]
+    }
+    try:
+        offset=0
+        response = requests.post(
+            url, headers=headers, json=payload, verify=False, timeout=60, proxies=proxies
+        )
+        r = response.json()
+        hits_temp = r["results"][0]["hits"]
+        hits = []
+        # ========== 过滤18禁提示词: ==========
+        # 参数"txt2imgHiRes"是18禁图片，"txt2img"是绿色图片
+        for json in hits_temp:
+            if json["generationProcess"]=="txt2img" and json["nsfw"]=="None":
+               hits.append(json)
+        if len(hits)<=0:
+           return ""
+        # ===================================
+
+        #条数处理
+        count = len(hits)
+        print(f"{query}>>条数：{count}")
+        if count>limit:
+            hits=hits[:limit]
+
+        steps = 35
+        sampler="DPM++ SDE Karras"
+        seed=-1
+        cfgScale=7
+        prompt=query
+        negativePrompt=""
+        if count>0:
+            num = random.randrange(1, count)
+            prompt = filter(hits[num]["meta"]["prompt"],filterEn)
+            if has_field(hits[num]["meta"],"negativePrompt"):
+                negativePrompt = hits[num]["meta"]["negativePrompt"]
+            if has_field(hits[num]["meta"],"cfgScale"):
+                cfgScale = hits[num]["meta"]["cfgScale"]
+            if has_field(hits[num]["meta"],"steps"):
+               steps = hits[num]["meta"]["steps"]
+            if has_field(hits[num]["meta"],"sampler"):
+               sampler = hits[num]["meta"]["sampler"]
+            if has_field(hits[num]["meta"],"seed"):
+               seed = hits[num]["meta"]["seed"]
+            jsonStr = {"prompt":isNone(prompt),"negativePrompt":isNone(negativePrompt),"cfgScale":cfgScale,"steps":steps,"sampler":isNone(sampler),"seed":seed}
+            logstr = hits[num]
+            print(f"C站提示词:{logstr}")
+            return jsonStr
+    except Exception as e:
+        print(f"draw_prompt信息回复异常{e}")
+        traceback.print_exc()
+        return ""
+    return ""
+
+# 过滤函数
+def filter(text,filterPromptStr):
+    fstr=filterPromptStr.replace("\\n","")
+    fstr=fstr.lower()
+    str = fstr.split(',')
+    for s in str:
+        text=text.lower().replace(s.lower(),"")
+    return text
+    
+# 判断是否none
+def isNone(text):
+    if text is None:
+       return ""
+    return text
+
+# 判断包含字符
+def has_field(json_data, field):
+    return field in json_data
 
 # 绘画任务队列
 def check_draw():
     global is_drawing
     global DrawQueueList
-    if not DrawQueueList.empty() and is_drawing == 2:
+    if not DrawQueueList.empty() and is_drawing == 3:
         draw_json = DrawQueueList.get()
         print(f"启动绘画:{draw_json}")
         # 开始绘画
@@ -682,73 +1034,177 @@ def check_draw():
             target=draw, args=(draw_json["prompt"], draw_json["username"])
         )
         answers_thread.start()
-        # 绘画进度
-        progress_thread = Thread(target=progress)
-        progress_thread.start()
-
 
 # 绘画
 def draw(prompt, username):
     global is_drawing
     global AnswerList
     global CameraOutList
-    checkpoint = "aingdiffusion_v13"
-    negative_prompt = "EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)"
-    parm_prompt = prompt
-    # 迪迦奥特曼
-    if (
-        is_array_contain_string(prompt, "迪迦") > 0
-        or is_array_contain_string(prompt, "奥特曼") > 0
-    ):
-        checkpoint = "chilloutmix_NiPrunedFp32Fix"
-        parm_prompt = "masterpiece, best quality, 1boy, alien, male focus, solo, 1boy, tokusatsu,full body, (giant), railing, glowing eyes, glowing, from below , white eyes,night, <lora:dijia:1> ,city,building,(Damaged buildings:1.3),tiltshift,(ruins:1.4)"
-
-    payload = {
-        "prompt": parm_prompt,
-        "negative_prompt": negative_prompt,
-        "hr_checkpoint_name": checkpoint,
-        "refiner_checkpoint": checkpoint,
-        "sampler_index": "DPM++ SDE Karras",
-        "steps": steps,
-        "cfg_scale": 7,
-        "seed": -1,
-        "width": width,
-        "height": height,
-    }
-
-    # stable-diffusion绘图
+    
     is_drawing = 1
-    response = requests.post(url=f"http://{drawUrl}/sdapi/v1/txt2img", json=payload)
-    is_drawing = 2
-    r = response.json()
-    # 读取二进制字节流
-    img = Image.open(io.BytesIO(base64.b64decode(r["images"][0])))
-    img = img.resize((width, height), Image.LANCZOS)
-    # 字节流转换为cv2图片对象
-    image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
-    # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
-    image = image[:, :, [2, 1, 0]]
-    # 虚拟摄像头输出
-    CameraOutList.put(image)
-    # 加入回复列表，并且后续合成语音
-    AnswerList.put(f"回复{username}：我给你画了一张画《{prompt}》")
+
+    drawName=prompt
+    steps = 35
+    sampler="DPM++ SDE Karras"
+    seed=-1
+    cfgScale=7
+    negativePrompt=""
+    jsonPrompt=""
+    flag = 1 # 1.默认 2.特殊模型
+    try:
+        trans_json = translate(prompt)  #翻译
+        if has_field(trans_json,"translated"):
+            prompt = trans_json["translated"]
+            #C站抽取提示词：扩展提示词-扩大Ai想象力
+            jsonPrompt = draw_prompt(prompt,0,50)
+            if jsonPrompt=="":
+               print(f"《{drawName}》没找到绘画扩展提示词，马上退出绘画")
+               return
+            print(f"绘画扩展提示词:{jsonPrompt}")
+
+        # 女孩
+        # text = ["漫画", "女"]
+        # num = is_index_contain_string(text, drawName)
+        # if num>0:
+        #     checkpoint = "aingdiffusion_v13"
+        #     prompt = jsonPrompt["prompt"]+f",{prompt},<lora:{prompt}>"
+        #     if jsonPrompt!="":
+        #         prompt=jsonPrompt["prompt"]+prompt
+        #     negativePrompt = f"EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)"
+        #     flag = 2
+        # 迪迦奥特曼
+        text = ["迪迦", "奥特曼"]
+        num = is_index_contain_string(text, drawName)
+        if num>0:
+            checkpoint = "chilloutmix_NiPrunedFp32Fix"
+            prompt = f"{prompt},masterpiece, best quality, 1boy, alien, male focus, solo, 1boy, tokusatsu,full body, (giant), railing, glowing eyes, glowing, from below , white eyes,night,  <lora:dijia:1> ,city,building,(Damaged buildings:1.3),tiltshift,(ruins:1.4),<lora:{prompt}>"
+            if jsonPrompt!="":
+                prompt=jsonPrompt["prompt"]+prompt
+            flag = 2
+
+        # 绘画扩展提示词 {"prompt":prompt,"negativePrompt":negativePrompt,"cfgScale":cfgScale,"steps":steps,"sampler":sampler,"seed":seed}
+        if flag == 1:
+            # 默认模型
+            checkpoint = "realvisxlV30Turbo_v30TurboBakedvae"
+            if jsonPrompt!="":
+                prompt = jsonPrompt["prompt"]+","+f"<lora:{prompt}>"
+                negativePrompt = isNone(jsonPrompt["negativePrompt"])
+                cfgScale = jsonPrompt["cfgScale"]
+                steps = jsonPrompt["steps"]
+                sampler = jsonPrompt["sampler"]
+                # seed = jsonPrompt["seed"]
+
+        payload = {
+            "prompt": prompt,
+            "negative_prompt": negativePrompt,
+            "hr_checkpoint_name": checkpoint,
+            "refiner_checkpoint": checkpoint,
+            "sampler_index": sampler,
+            "steps": steps,
+            "cfg_scale": cfgScale,
+            "seed": seed,
+            "width": width,
+            "height": height,
+        }
+        print(f"画画参数：{payload}")
+    
+        # stable-diffusion绘图
+        # 绘画进度
+        progress_thread = Thread(target=progress,args=(drawName, username))
+        progress_thread.start()
+        # 生成绘画
+        response = requests.post(url=f"http://{drawUrl}/sdapi/v1/txt2img", json=payload)
+        is_drawing = 2
+        r = response.json()
+        #错误码跳出
+        if(has_field(r, "error") and r["error"]!=""):
+           print(f"绘画生成错误:{r}")
+           return
+        # 读取二进制字节流
+        imgb64=r["images"][0]
+        #===============鉴黄, 大于50%进行鉴黄====================
+        nsfwJson = nsfw_deal(imgb64)
+        print(f"《{drawName}》【最终】鉴黄结果:{nsfwJson}")
+        status = nsfwJson["status"]
+        if status=="失败":
+           print(f"《{drawName}》【最终】鉴黄失败，图片不明确跳出")
+           return 
+        nsfw = nsfwJson["nsfw"]
+        #发现黄图
+        try:
+            if status=="成功" and nsfw>nsfw_limit:
+                print(f"《{drawName}》【最终】绘画完成，发现黄图:{nsfw},马上退出")
+                nsfw_stop_image()
+                # 保存用户的黄图，留底观察
+                img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
+                img.save(f"./porn/{drawName}_{username}.jpg")
+                # 播报绘画
+                outputTxt=f"回复{username}：发现一张黄图《{drawName}》，禁止绘画"
+                print(outputTxt)
+                tts_say(outputTxt)
+                return
+        except Exception as e:
+            print(f"《{drawName}》【最终】鉴黄发生了异常：{e}")
+            traceback.print_exc()
+            return
+        #========================================================
+        img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
+        img = img.resize((width, height), Image.LANCZOS)
+        # 字节流转换为cv2图片对象
+        image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+        # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
+        image = image[:, :, [2, 1, 0]]
+        # 虚拟摄像头输出
+        CameraOutList.put(image)
+        # 播报绘画
+        outputTxt=f"回复{username}：我给你画了一张画《{drawName}》"
+        print(outputTxt)
+        tts_say(outputTxt)
+    except Exception as e:
+        print(f"draw发生了异常：{e}")
+        traceback.print_exc()
+    finally:
+        is_drawing = 3
 
 
 # 图片生成进度
-def progress():
+def progress(prompt, username):
     global is_drawing
-    time.sleep(0.3)
     while True:
         # 绘画中：输出进度图
         if is_drawing == 1:
             # stable-diffusion绘图进度
             response = requests.get(url=f"http://{drawUrl}/sdapi/v1/progress")
             r = response.json()
-            imgstr = r["current_image"]
-            if imgstr != "" and imgstr is not None:
-                print(f"输出进度：" + str(round(r["progress"] * 100, 2)) + "%")
+            imgb64 = r["current_image"]
+            if imgb64 != "" and imgb64 is not None:
+                p = round(r["progress"] * 100, 2)
+                print(f"《{prompt}》输出进度：{p}%")
+                #===============鉴黄, 大于xxx进度进行鉴黄====================
+                try:
+                    if p>progress_limit:
+                        nsfwJson = nsfw_deal(imgb64)
+                        print(f"《{prompt}》鉴黄结果:{nsfwJson}")
+                        status = nsfwJson["status"]
+                        if status=="失败":
+                            print(f"《{prompt}》进度{p}%鉴黄失败，图片不明确跳出")
+                            continue 
+                        nsfw = nsfwJson["nsfw"]
+                        #发现黄图
+                        if status=="成功" and nsfw>nsfw_limit:
+                            print(f"《{prompt}》进度{p}%发现黄图:{nsfw},进度跳过")
+                            nsfw_stop_image()
+                            # 保存用户的黄图，留底观察
+                            img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
+                            img.save(f"./porn/{prompt}_{username}_{p}.jpg")
+                            continue
+                except Exception as e:
+                    print(f"鉴黄发生了异常：{e}")
+                    traceback.print_exc()
+                    continue
+                #========================================================
                 # 读取二进制字节流
-                img = Image.open(io.BytesIO(base64.b64decode(imgstr)))
+                img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
                 # 拉伸图片
                 img = img.resize((width, height), Image.LANCZOS)
                 # 字节流转换为cv2图片对象
@@ -758,11 +1214,29 @@ def progress():
                 # 虚拟摄像头输出
                 CameraOutList.put(image)
             time.sleep(1)
-        # 绘画完成：退出
-        elif is_drawing == 2:
-            print(f"输出进度：100%")
-            break
+        elif is_drawing >= 2:
+            print(f"《{prompt}》输出进度：100%")
+            break    
 
+def nsfw_stop_image():
+    # 读取二进制字节流
+    img = Image.open("./images/黄图.jpg")
+    # 拉伸图片
+    img = img.resize((width, height), Image.LANCZOS)
+    # 字节流转换为cv2图片对象
+    image = cv2.cvtColor(np.array(img), cv2.COLOR_RGB2BGR)
+    # 转换为RGB：由于 cv2 读出来的图片默认是 BGR，因此需要转换成 RGB
+    image = image[:, :, [2, 1, 0]]
+    # 虚拟摄像头输出
+    CameraOutList.put(image)
+
+def nsfw_deal(imgb64):
+    # 鉴黄
+    headers = {"Content-Type": "application/json"}
+    data={"image_loader":"yahoo","model_weights":"data/open_nsfw-weights.npy","input_type":"BASE64_JPEG","input_image":imgb64}
+    nsfw = requests.post(url=f"http://192.168.2.198:1801/input", headers=headers, json=data, verify=False, timeout=60)
+    nsfwJson = nsfw.json()
+    return nsfwJson
 
 # 输出图片流到虚拟摄像头
 def outCamera():
@@ -778,27 +1252,65 @@ def outCamera():
 
 
 def main():
+    # ws服务心跳包
+    run_forever_thread = Thread(target=run_forever)
+    run_forever_thread.start()
     # 唤起虚拟摄像头
     outCamera_thread = Thread(target=outCamera)
     outCamera_thread.start()
-    # LLM回复
-    sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
-    # tts语音合成
-    sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
-    # MPV播放
-    sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
-    # 绘画
-    sched1.add_job(check_draw, "interval", seconds=1, id=f"draw", max_instances=4)
-    # 搜图
-    sched1.add_job(
-        check_img_search, "interval", seconds=1, id=f"img_search", max_instances=4
-    )
-    # 唱歌
-    sched1.add_job(check_sing, "interval", seconds=1, id=f"sing", max_instances=4)
-    sched1.start()
-    # 开始监听弹幕流
-    sync(room.connect())
+    if mode==1 or mode==3:
+        # LLM回复
+        sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
+        # tts语音合成
+        sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
+        # MPV播放
+        sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
+        # 绘画
+        sched1.add_job(check_draw, "interval", seconds=1, id=f"draw", max_instances=4)
+        # 搜图
+        sched1.add_job(check_img_search, "interval", seconds=1, id=f"img_search", max_instances=4)
+        # 搜文
+        sched1.add_job(check_text_search, "interval", seconds=1, id=f"text_search", max_instances=4)
+        # 唱歌
+        sched1.add_job(check_sing, "interval", seconds=1, id=f"sing", max_instances=4)
+        sched1.start()
+        # 开始监听弹幕流
+        sync(room.connect())
+    if mode==2:
+        # LLM回复
+        sched1.add_job(func=check_answer, trigger="interval", seconds=1, id=f"answer", max_instances=4)
+        # tts语音合成
+        sched1.add_job(func=check_tts, trigger="interval", seconds=1, id=f"tts", max_instances=4)
+        # MPV播放
+        sched1.add_job(func=check_mpv, trigger="interval", seconds=1, id=f"mpv", max_instances=4)
+        # 绘画
+        sched1.add_job(func=check_draw, trigger="interval", seconds=1, id=f"draw", max_instances=4)
+        # 搜图
+        sched1.add_job(func=check_img_search, trigger="interval", seconds=1, id=f"img_search", max_instances=4)
+        # 唱歌
+        sched1.add_job(func=check_sing, trigger="interval", seconds=1, id=f"sing", max_instances=4)
+        sched1.start()
+    if mode==2 or mode==3:
+        # 开启web
+        app.run(host="0.0.0.0", port=1800)
+    
 
+# 授权Vtuber服务
+def auth():
+    #授权码
+    authstr={
+        "apiName": "VTubeStudioPublicAPI",
+        "apiVersion": "1.0",
+        "requestID": "SomeID",
+        "messageType": "AuthenticationRequest",
+        "data": {
+            "pluginName": "Cheers Bot",
+            "pluginDeveloper": "winlone",
+            "authenticationToken": "7dc9bb48d9efdfc88c6f49e1a2fdd51fa3a396681fb882b59e373428cea32413"
+        }
+    }
+    data=json.dumps(authstr)
+    ws.send(data)
 
 if __name__ == "__main__":
     main()
