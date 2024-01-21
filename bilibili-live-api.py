@@ -550,14 +550,19 @@ def tts_say(text):
     global SayCount
     with open(f"./output/say{SayCount}.txt", "w", encoding="utf-8") as f:
         f.write(f"{text}")  # 将要读的回复写入临时文件
+    #合成声音
     subprocess.run(
         f"edge-tts --voice zh-CN-XiaoxiaoNeural --rate=+20% --f .\output\say{SayCount}.txt --write-media .\output\say{SayCount}.mp3 2>nul",
         shell=True,
-    )  # 执行命令行指令
+    )  
+    # 播放声音
     subprocess.run(
             f"mpv.exe -vo null --volume=100 .\output\say{SayCount}.mp3 1>nul",
             shell=True,
-        )
+    )
+    # 输出表情
+    emote_thread = Thread(target=emote_show,args=(text,))
+    emote_thread.start()
     # 执行命令行指令
     subprocess.run(f"del /f .\output\say{SayCount}.mp3 1>nul", shell=True)
     subprocess.run(f"del /f .\output\say{SayCount}.txt 1>nul", shell=True)
@@ -713,6 +718,7 @@ def mpv_read():
         temp1 = MpvList.get()
         current_mpvlist_count = MpvList.qsize()
 
+        #输出表情
         response = EmoteList.get()
         emote_thread = Thread(target=emote_show,args=(response,))
         emote_thread.start()
@@ -1058,8 +1064,8 @@ def draw(prompt, username):
             #C站抽取提示词：扩展提示词-扩大Ai想象力
             jsonPrompt = draw_prompt(prompt,0,50)
             if jsonPrompt=="":
-               print(f"《{drawName}》没找到绘画扩展提示词，马上退出绘画")
-               return
+               print(f"《{drawName}》没找到绘画扩展提示词")
+               jsonPrompt = {"prompt":"","negativePrompt":"","cfgScale":cfgScale,"steps":steps,"sampler":sampler,"seed":seed}
             print(f"绘画扩展提示词:{jsonPrompt}")
 
         # 女孩
@@ -1067,7 +1073,7 @@ def draw(prompt, username):
         # num = is_index_contain_string(text, drawName)
         # if num>0:
         #     checkpoint = "aingdiffusion_v13"
-        #     prompt = jsonPrompt["prompt"]+f",{prompt},<lora:{prompt}>"
+        #     prompt = f"(({prompt})),"+jsonPrompt["prompt"]+f",{prompt},<lora:{prompt}>"
         #     if jsonPrompt!="":
         #         prompt=jsonPrompt["prompt"]+prompt
         #     negativePrompt = f"EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)"
@@ -1077,7 +1083,7 @@ def draw(prompt, username):
         num = is_index_contain_string(text, drawName)
         if num>0:
             checkpoint = "chilloutmix_NiPrunedFp32Fix"
-            prompt = f"{prompt},masterpiece, best quality, 1boy, alien, male focus, solo, 1boy, tokusatsu,full body, (giant), railing, glowing eyes, glowing, from below , white eyes,night,  <lora:dijia:1> ,city,building,(Damaged buildings:1.3),tiltshift,(ruins:1.4),<lora:{prompt}>"
+            prompt = f"(({prompt})),masterpiece, best quality, 1boy, alien, male focus, solo, 1boy, tokusatsu,full body, (giant), railing, glowing eyes, glowing, from below , white eyes,night,  <lora:dijia:1> ,city,building,(Damaged buildings:1.3),tiltshift,(ruins:1.4),<lora:{prompt}>"
             if jsonPrompt!="":
                 prompt=jsonPrompt["prompt"]+prompt
             flag = 2
@@ -1087,7 +1093,7 @@ def draw(prompt, username):
             # 默认模型
             checkpoint = "realvisxlV30Turbo_v30TurboBakedvae"
             if jsonPrompt!="":
-                prompt = jsonPrompt["prompt"]+","+f"<lora:{prompt}>"
+                prompt = f"(({prompt})),"+jsonPrompt["prompt"]+","+f"<lora:{prompt}>"
                 negativePrompt = isNone(jsonPrompt["negativePrompt"])
                 cfgScale = jsonPrompt["cfgScale"]
                 steps = jsonPrompt["steps"]
