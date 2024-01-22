@@ -70,8 +70,8 @@ LLM 训练模型路径：checkpoint_path = ("LLaMA-Factory/saves/ChatGLM2-6B-Cha
 搜索服务代理：duckduckgo_proxies="socks5://127.0.0.1:10806"<br>
 搜图服务代理：proxies = {"http": "socks5://127.0.0.1:10806", "https": "socks5://127.0.0.1:10806"}<br>
 
-2、(可选)启动 LLM 聊天服务 text-generation-webui
-项目 github：https://github.com/oobabooga/text-generation-webui
+2、(可选)启动 LLM 聊天服务 text-generation-webui<br>
+项目 github：https://github.com/oobabooga/text-generation-webui<br>
 
 ```bash
 #进入虚拟环境
@@ -82,8 +82,8 @@ pip install -r requirements.txt
 ./start.bat
 ```
 
-3、(可选)启动绘画服务 stable-diffusion-webui
-项目 github：https://github.com/AUTOMATIC1111/stable-diffusion-webui
+3、(可选)启动绘画服务 stable-diffusion-webui<br>
+项目 github：https://github.com/AUTOMATIC1111/stable-diffusion-webui<br>
 
 ```bash
 #进入虚拟环境
@@ -101,8 +101,8 @@ call webui.bat
 ./webui-user.bat
 ```
 
-4、(可选)启动绘画鉴黄服务 public-NSFW-y-distinguish
-项目 github：https://github.com/fd-freedom/public-NSFW-y-distinguish
+4、(可选)启动绘画鉴黄服务 public-NSFW-y-distinguish<br>
+项目 github：https://github.com/fd-freedom/public-NSFW-y-distinguish<br>
 
 ```bash
 运行环境（必要）：Python 3.6.13
@@ -111,8 +111,8 @@ pip install -r requirements.txt
 py nsfw_web.py
 ```
 
-5、(可选)启动唱歌服务 Auto-Convert-Music
-服务暂不开源
+5、(可选)启动唱歌服务 Auto-Convert-Music<br>
+服务暂不开源<br>
 
 6、(必选)皮肤启动，安装 steam，安装 VTube Studio<br>
 这个自行下载 steam 平台，在平台里面有一个 VTube Studio 软件，它就是启动 live2D 的虚拟主播皮肤<br>
