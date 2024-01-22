@@ -58,17 +58,17 @@ pip install -r requirements.txt
 python bilibili-live-api.py
 ```
 
-# 修改内容须知：
+#### 修改内容须知：
 
-B 站直播间鉴权（B 站浏览器获取 cookie）：sessdata、buvid3
-Vtuber Studio 表情 ws 地址：ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
-唱歌服务 Auto-Convert-Music 地址：singUrl = "192.168.2.58:1717"
-绘画服务 stable-diffusion-webui 地址：drawUrl = "192.168.2.58:7860"
-聊天服务 text-generation-webui 地址：tgwUrl = "192.168.2.58:5000"
-LLM 模型路径：model_path = "ChatGLM2/THUDM/chatglm2-6b"
-LLM 训练模型路径：checkpoint_path = ("LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last")
-搜索服务代理：duckduckgo_proxies="socks5://127.0.0.1:10806"
-搜图服务代理：proxies = {"http": "socks5://127.0.0.1:10806", "https": "socks5://127.0.0.1:10806"}
+B 站直播间鉴权（B 站浏览器获取 cookie）：sessdata、buvid3<br>
+Vtuber Studio 表情 ws 地址：ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)<br>
+唱歌服务 Auto-Convert-Music 地址：singUrl = "192.168.2.58:1717"<br>
+绘画服务 stable-diffusion-webui 地址：drawUrl = "192.168.2.58:7860"<br>
+聊天服务 text-generation-webui 地址：tgwUrl = "192.168.2.58:5000"<br>
+LLM 模型路径：model_path = "ChatGLM2/THUDM/chatglm2-6b"<br>
+LLM 训练模型路径：checkpoint_path = ("LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last")<br>
+搜索服务代理：duckduckgo_proxies="socks5://127.0.0.1:10806"<br>
+搜图服务代理：proxies = {"http": "socks5://127.0.0.1:10806", "https": "socks5://127.0.0.1:10806"}<br>
 
 2、(可选)启动 LLM 聊天服务 text-generation-webui
 项目 github：https://github.com/oobabooga/text-generation-webui
