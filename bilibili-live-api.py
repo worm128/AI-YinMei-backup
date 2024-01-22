@@ -29,6 +29,7 @@ from transformers import AutoTokenizer, AutoModel, AutoConfig
 from urllib.parse import quote
 from flask import Flask, jsonify, request
 from flask_apscheduler import APScheduler
+from urllib import parse
 
 print("=====================================================================")
 print("开始启动人工智能吟美！")
@@ -542,28 +543,55 @@ def check_tts():
         tts_thread = Thread(target=tts_generate)
         tts_thread.start()
 
+# bert-vits2语音合成
+def bert_vits2(filename,text,emotion):
+    save_path=f".\output\{filename}.mp3"
+    text=parse.quote(text)
+    response = requests.get(url=f"http://127.0.0.1:5000/voice?text={text}&model_id=0&speaker_name=刻晴[中]&sdp_ratio=0.2&noise=0.2&noisew=0.9&length=1&language=ZH&auto_translate=false&auto_split=true&emotion={emotion}")
+    if response.status_code == 200:
+       audio_data = response.content # 获取音频数据
+       with open(save_path, 'wb') as file:
+            filenum=file.write(audio_data)
+            if filenum>0:
+                return 1
+    return 0
+         
+
 # 直接合成语音播放
 def tts_say(text):
     say_lock.acquire()
     global SayCount
-    with open(f"./output/say{SayCount}.txt", "w", encoding="utf-8") as f:
-        f.write(f"{text}")  # 将要读的回复写入临时文件
-    #合成声音
-    subprocess.run(
-        f"edge-tts --voice zh-CN-XiaoxiaoNeural --rate=+20% --f .\output\say{SayCount}.txt --write-media .\output\say{SayCount}.mp3 2>nul",
-        shell=True,
-    )  
-    # 播放声音
-    subprocess.run(
-            f"mpv.exe -vo null --volume=100 .\output\say{SayCount}.mp3 1>nul",
-            shell=True,
-    )
+    filename=f"say{SayCount}"
+    
+    # 识别表情
+    jsonstr = emote_content(text)
+    emotion = "happy"
+    if len(jsonstr)>0:
+        emotion = jsonstr[0]["content"]
+
+    # 微软合成语音
+    # with open(f"./output/{filename}.txt", "w", encoding="utf-8") as f:
+    #     f.write(f"{text}")  # 将要读的回复写入临时文件
+    # 合成声音
+    # subprocess.run(
+    #     f"edge-tts --voice zh-CN-XiaoxiaoNeural --rate=+20% --f .\output\{filename}.txt --write-media .\output\{filename}.mp3 2>nul",
+    #     shell=True,
+    # )
+    # bert_vits2合成语音
+    status = bert_vits2(filename,text,emotion)
+    if status ==0:
+       return
+
     # 输出表情
-    emote_thread = Thread(target=emote_show,args=(text,))
+    emote_thread = Thread(target=emote_show,args=(jsonstr,))
     emote_thread.start()
+
+    # 播放声音
+    mpv_play(f".\output\{filename}.mp3",100)
+
     # 执行命令行指令
     subprocess.run(f"del /f .\output\say{SayCount}.mp3 1>nul", shell=True)
-    subprocess.run(f"del /f .\output\say{SayCount}.txt 1>nul", shell=True)
+    # subprocess.run(f"del /f .\output\say{SayCount}.txt 1>nul", shell=True)
     SayCount += 1
     say_lock.release()
 
@@ -574,12 +602,19 @@ def tts_generate():
     global MpvList
     global AudioCount
     response = AnswerList.get()
-    with open("./output/output.txt", "w", encoding="utf-8") as f:
-        f.write(f"{response}")  # 将要读的回复写入临时文件
-    subprocess.run(
-        f"edge-tts --voice zh-CN-XiaoxiaoNeural --rate=+20% --f .\output\output.txt --write-media .\output\output{AudioCount}.mp3 2>nul",
-        shell=True,
-    )  # 执行命令行指令
+    filename=f"output{AudioCount}"
+
+    # with open("./output/output.txt", "w", encoding="utf-8") as f:
+    #     f.write(f"{response}")  # 将要读的回复写入临时文件
+    # subprocess.run(
+    #     f"edge-tts --voice zh-CN-XiaoxiaoNeural --rate=+20% --f .\output\output.txt --write-media .\output\{filename}.mp3 2>nul",
+    #     shell=True,
+    # )
+    # bert_vits2合成语音
+    status = bert_vits2(filename,response,"happy")
+    if status ==0:
+       return
+    
     begin_name = response.find("回复")
     end_name = response.find("：")
     contain = response.find("来到吟美的直播")
@@ -605,40 +640,45 @@ def tts_generate():
     AudioCount += 1
     is_tts_ready = True  # 指示TTS已经准备好回复下一个问题
 
-
-# 表情加入:使用键盘控制VTube
-def emote_show(response):
+# 文本识别表情内容
+def emote_content(response):
+    jsonstr = []
     # =========== 开心 ==============
     text = ["笑", "不错", "哈", "开心", "呵", "嘻", "画"]
-    emote_thread1 = Thread(
-        target=emote_ws, args=(text, response,  0.2, "开心")
-    )
-    emote_thread1.start()
+    num = is_array_contain_string(text, response)
+    if num > 0:
+        jsonstr.append({"content":"happy","key":"开心","num":num})
     # =========== 招呼 ==============
     text = ["你好", "在吗", "干嘛", "名字", "欢迎", "搜"]
-    emote_thread2 = Thread(
-        target=emote_ws, args=(text, response,  0.2, "招呼")
-    )
-    emote_thread2.start()
+    num = is_array_contain_string(text, response)
+    if num > 0:
+        jsonstr.append({"content":"call","key":"招呼","num":num})
     # =========== 生气 ==============
     text = ["生气", "不理你", "骂", "臭", "打死", "可恶", "白痴", "忘记"]
-    emote_thread3 = Thread(
-        target=emote_ws, args=(text, response,  0.2, "生气")
-    )
-    emote_thread3.start()
+    num = is_array_contain_string(text, response)
+    if num > 0:
+        jsonstr.append({"content":"angry","key":"生气","num":num})
     # =========== 尴尬 ==============
     text = ["尴尬", "无聊", "无奈", "傻子", "郁闷", "龟蛋"]
-    emote_thread4 = Thread(
-        target=emote_ws, args=(text, response,  0.2, "尴尬")
-    )
-    emote_thread4.start()
+    num = is_array_contain_string(text, response)
+    if num > 0:
+        jsonstr.append({"content":"blush","key":"尴尬","num":num})
     # =========== 认同 ==============
     text = ["认同", "点头", "嗯", "哦", "女仆", "唱"]
-    emote_thread5 = Thread(
-        target=emote_ws, args=(text, response,  0.2, "认同")
-    )
-    emote_thread5.start()
+    num = is_array_contain_string(text, response)
+    if num > 0:
+        jsonstr.append({"content":"approve","key":"认同","num":num})
+    return jsonstr
 
+# 表情加入:使用键盘控制VTube
+def emote_show(emote_content):
+    for data in emote_content:
+        key = data["key"]
+        num = data["num"]
+        emote_thread = Thread(
+            target=emote_ws, args=(num, 0.2, key)
+        )
+        emote_thread.start()
 
 # 键盘触发-带按键时长
 def emote_do(text, response, keyboard, startTime, key):
@@ -652,8 +692,7 @@ def emote_do(text, response, keyboard, startTime, key):
         print(f"{response}:输出表情({start}){key}")
 
 # ws协议：发送表情到Vtuber
-def emote_ws(text, response, startTime, key):
-    num = is_array_contain_string(text, response)
+def emote_ws(num, startTime, key):
     if num > 0:
         start = round(num * startTime, 2)
         time.sleep(start)
@@ -718,28 +757,31 @@ def mpv_read():
 
         #输出表情
         response = EmoteList.get()
-        emote_thread = Thread(target=emote_show,args=(response,))
+
+        # 识别表情
+        jsonstr = emote_content(response)
+        # 输出表情
+        emote_thread = Thread(target=emote_show,args=(jsonstr,))
         emote_thread.start()
 
         print(
             f"\033[32mSystem>>\033[0m开始播放output{temp1}.mp3，当前待播语音数：{current_mpvlist_count}"
         )
-        subprocess.run(
-            f"mpv.exe -vo null --volume=100 .\output\output{temp1}.mp3 1>nul",
-            shell=True,
-        )
+        # 播放声音
+        mpv_play(f".\output\output{temp1}.mp3",100)
+
         # 执行命令行指令
         subprocess.run(f"del /f .\output\output{temp1}.mp3 1>nul", shell=True)
     is_mpv_ready = True
 
 
 # 播放器播放
-def song_read(song_path):
+def mpv_play(song_path,volume):
     global is_mpv_ready
     while is_mpv_ready:
         # end：播放多少秒结束  volume：音量，最大100，最小0
         subprocess.run(
-            f'mpv.exe -vo null --volume=60 "{song_path}" 1>nul',
+            f'mpv.exe -vo null --volume={volume} "{song_path}" 1>nul',
             shell=True,
         )
         return
@@ -874,7 +916,7 @@ def play_song(is_created,songname,song_path,username):
             # 播报唱歌文字
             tts_say(f"回复{username}：我准备唱一首歌《{songname}》")
             # 调用mpv播放器
-            song_read(song_path)
+            mpv_play(song_path,60)
         else:
             tip=f"已经跳过歌曲《{songname}》，请稍后再点播"
             print(tip)
