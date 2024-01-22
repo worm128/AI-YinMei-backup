@@ -11,22 +11,18 @@
 ## **介绍**
 
 - 支持本地 LLM 模型 chatglm-6b 的 1 代~3 代的 AI 自然语言回复
-
 - 支持对接 bilibili 直播间弹幕回复和进入直播间欢迎语
-
 - 支持微软 edge-tts 语音合成
-
 - 支持聊天记忆模式和扮演卡,可以多角色切换
-
-- 支持 AI 训练
-
-- 支持 Vtuber 表情控制
-
-- 支持 stable-diffusion-webui 绘画输出 OBS 直播间
+- 支持 AI 训练 LLaMA-Factory
+- 支持表情控制 Vtuber Studio
+- 支持绘画 stable-diffusion-webui 输出 OBS 直播间
+- 支持绘画图片鉴黄 public-NSFW-y-distinguish
+- 支持搜索和搜图服务 duckduckgo
 
 ### 运行环境
 
-- Python 3.11
+- Python 3.11.6
 
 ### 调用类库
 
@@ -38,6 +34,13 @@
   pynput：1.7.6<br>
   APScheduler：3.10.4<br>
   transformers：4.35.2<br>
+  websocket-client：1.6.4v<br>
+  duckduckgo_search：4.1.1<br>
+  pyvirtualcam：0.11.0<br>
+  opencv-python：4.8.1.78<br>
+  Flask：3.0.0<br>
+  Flask-APScheduler：1.13.1<br>
+  duckduckgo_search：4.1.1<br>
 
 ### 启动方式
 
@@ -48,28 +51,73 @@
 & 盘符:路径/pylib/aivenv/Scripts/Activate.ps1
 #安装py包
 pip install -r requirements.txt
-#选择一、启动对接b站直播程序(选0.此程序会对接后端text-generation-webui接口，选1.当前加载LLM本地模型)
+#启动对接b站直播程序
+#一：1.b站直播间 2.api web 3.双开:
+#二：0.对接后端text-generation-webui接口   1.当前加载LLM本地模型
+#三：输入你的B站直播间编号
 python bilibili-live-api.py
-#选择二、启动对接b站直播程序(此程序直接在当前代码加载chatglm大语言模型+训练checkpoint)
-(已废弃，已经集成到bilibili-live-api.py)
-python bilibili-live-local.py
 ```
 
-2、(可选)启动 LLM 模型，进入 text-generation-webui
+# 修改内容须知：
+
+B 站直播间鉴权（B 站浏览器获取 cookie）：sessdata、buvid3
+Vtuber Studio 表情 ws 地址：ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
+唱歌服务 Auto-Convert-Music 地址：singUrl = "192.168.2.58:1717"
+绘画服务 stable-diffusion-webui 地址：drawUrl = "192.168.2.58:7860"
+聊天服务 text-generation-webui 地址：tgwUrl = "192.168.2.58:5000"
+LLM 模型路径：model_path = "ChatGLM2/THUDM/chatglm2-6b"
+LLM 训练模型路径：checkpoint_path = ("LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last")
+搜索服务代理：duckduckgo_proxies="socks5://127.0.0.1:10806"
+搜图服务代理：proxies = {"http": "socks5://127.0.0.1:10806", "https": "socks5://127.0.0.1:10806"}
+
+2、(可选)启动 LLM 聊天服务 text-generation-webui
+项目 github：https://github.com/oobabooga/text-generation-webui
 
 ```bash
 #进入虚拟环境
-& 盘符:路径/pylib/aivenv/Scripts/Activate.ps1
+& 盘符:py虚拟空间路径/Scripts/Activate.ps1
 #安装py包
 pip install -r requirements.txt
 #启动text-generation-webui程序，start.bat是我自定义的window启动脚本
 ./start.bat
 ```
 
-3、(必选)皮肤启动，安装 steam，安装 VTube Studio<br>
+3、(可选)启动绘画服务 stable-diffusion-webui
+项目 github：https://github.com/AUTOMATIC1111/stable-diffusion-webui
+
+```bash
+#进入虚拟环境
+& 盘符:py虚拟空间路径/Scripts/Activate.ps1
+#安装py包
+pip install -r requirements.txt
+#配置api服务webui-user.bat
+@echo off
+set PYTHON=.\pydraw\Scripts\python.exe
+set GIT=
+set VENV_DIR=.\pydraw\
+set COMMANDLINE_ARGS=--api
+call webui.bat
+#启动text-generation-webui程序，start.bat是我自定义的window启动脚本
+./webui-user.bat
+```
+
+4、(可选)启动绘画鉴黄服务 public-NSFW-y-distinguish
+项目 github：https://github.com/fd-freedom/public-NSFW-y-distinguish
+
+```bash
+运行环境（必要）：Python 3.6.13
+pip install -r requirements.txt
+# 此文件为本人特制
+py nsfw_web.py
+```
+
+5、(可选)启动唱歌服务 Auto-Convert-Music
+服务暂不开源
+
+6、(必选)皮肤启动，安装 steam，安装 VTube Studio<br>
 这个自行下载 steam 平台，在平台里面有一个 VTube Studio 软件，它就是启动 live2D 的虚拟主播皮肤<br>
 
-4、(必选)其他<br>
+7、(必选)其他<br>
 安装虚拟声卡：虚拟声卡驱动（Virtual Audio Cable）4.66 官方版<br>
 
 此外，需要在 text-generation-webui/models 路径放入 LLM 模型，我这里放的是 chatgml2 的模型，大家可以任意选择底层 LLM 模型，例如，千问、百川、chatglm、llama 等<br>

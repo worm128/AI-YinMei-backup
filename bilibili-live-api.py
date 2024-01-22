@@ -77,9 +77,7 @@ if is_local_llm == 1:
     # AI基础模型路径
     model_path = "ChatGLM2/THUDM/chatglm2-6b"
     # 训练模型路径
-    checkpoint_path = (
-        "LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last"
-    )
+    checkpoint_path = ("LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora/yinmei-20231123-ok-last")
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True)
     # 导入chatglm 你可以换你喜欢的版本模型. 量化int8： .quantize(8)
     model = AutoModel.from_pretrained(model_path, trust_remote_code=True).cuda()
@@ -1137,7 +1135,7 @@ def draw(prompt, username):
            return
         # 读取二进制字节流
         imgb64=r["images"][0]
-        #===============鉴黄, 大于50%进行鉴黄====================
+        #===============最终图片鉴黄====================
         nsfwJson = nsfw_deal(imgb64)
         print(f"《{drawName}》【最终】鉴黄结果:{nsfwJson}")
         status = nsfwJson["status"]
@@ -1195,7 +1193,7 @@ def progress(prompt, username):
             if imgb64 != "" and imgb64 is not None:
                 p = round(r["progress"] * 100, 2)
                 print(f"《{prompt}》输出进度：{p}%")
-                #===============鉴黄, 大于xxx进度进行鉴黄====================
+                #===============鉴黄, 大于**%进度进行鉴黄====================
                 try:
                     if p>progress_limit:
                         nsfwJson = nsfw_deal(imgb64)
