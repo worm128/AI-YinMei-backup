@@ -89,7 +89,7 @@ pip install -r requirements.txt
   酒馆，强大的 AI 角色扮演，但是该项目没有公开接口调用，而且 TTS 语言合成很缓慢，暂未集成使用<br>
   https://github.com/SillyTavern/SillyTavern<br>
 - output【输出路径】：<br>
-  输出的文本 txt、语音 mp3 文件都在这里<br>
+  输出的文本 txt、语音 mp3 文件都在这里<br>3
 - ChatGLM2\ptuning【AI 训练】：<br>
   ChatGLM 官方训练例子<br>
 - ChatGLM2\ptuning\zero_nlp【AI 训练】：<br>

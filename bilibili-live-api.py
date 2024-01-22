@@ -146,7 +146,7 @@ ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
 
 # ============= 鉴黄 =====================
 filterEn="huge breasts,open clothes,topless,voluptuous,breast,prostitution,erotic,armpit,milk,leaking,spraying,woman,cupless latex,latex,tits,boobs,lingerie,chest,seductive,poses,pose,leg,posture,alluring,milf,on bed,mature,slime,open leg,full body,bra,lace,bikini,full nude,nude,bare,one-piece,navel,cleavage,swimsuit,naked,adult,nudity,beautiful breasts,nipples,sex,Sexual,vaginal,penis,large penis,pantie,leotards,anal"
-filterCh="屁股,奶子,乳房,乳胶,乳,胸,劈叉,狗日,走光,底裤,比基尼,女优,男优,妓,嫖娼,黄片,淫荡,性感,性爱,做爱,裸体,赤裸,破处,丝袜,肛门"
+filterCh="屁股,奶子,乳房,乳胶,劈叉,走光,女优,男优,嫖娼,淫荡,性感,性爱,做爱,裸体,赤裸,肛门"
 progress_limit=10   #绘图大于多少百分比进行鉴黄
 nsfw_limit=0.2  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
 # ============================================
@@ -777,7 +777,7 @@ def singTry(songname, username):
 def sing(songname, username):
     global is_singing
     global is_creating_song
-    is_created = 0  # 1.已经生成过 0.没有生成过
+    is_created = 0  # 1.已经生成过 0.没有生成过 2.生成失败
 
     # =============== 开始-获取真实歌曲名称 =================
     musicJson = requests.get(url=f"http://{singUrl}/musicInfo/{songname}")
@@ -808,6 +808,9 @@ def sing(songname, username):
         while is_creating_song == 1:
             time.sleep(1)
         is_created=create_song(songname,song_path,is_created,downfile)
+    if is_created==2:
+        print(f"生成歌曲失败《{songname}》")
+        return
     # =============== 结束：如果不存在歌曲，生成歌曲 =================
 
     #等待播放
@@ -837,6 +840,8 @@ def create_song(songname,song_path,is_created,downfile):
             while downfile is None and is_creating_song==1:
                 # 检查歌曲是否生成成功：这里网易歌库返回songname和用户的模糊搜索可能歌名不同
                 downfile, is_created = check_down_song(songname)
+                if is_created == 2:
+                    break
                 # 本地保存歌曲
                 if downfile is not None and is_created == 1:
                     with open(song_path, "wb") as f:
@@ -891,16 +896,20 @@ def check_down_song(songname):
     status = requests.get(url=f"http://{singUrl}/status")
     converted_json = json.loads(status.text)
     converted_file = converted_json["converted_file"]  # 生成歌曲硬盘文件
-    is_created = 0  # 1.已经生成过 0.没有生成过
+    convertfail = converted_json["convertfail"]  # 生成歌曲硬盘文件
+    is_created = 0  # 1.已经生成过 0.没有生成过 2.生成失败
+    for filename in convertfail:
+        if songname == filename:
+            is_created = 2
+            return downfile, is_created
+
     # 优先：精确匹配文件名
     for filename in converted_file:
         if songname == filename:
             is_created = 1
-            break
-
-    if is_created == 1:
-        downfile = requests.get(url=f"http://{singUrl}/get_audio/{songname}")
-        return downfile, is_created
+            downfile = requests.get(url=f"http://{singUrl}/get_audio/{songname}")
+            return downfile, is_created
+    
     return None, is_created
 
 #翻译
