@@ -112,7 +112,7 @@ is_SearchText = 2  # 1.搜文中 2.搜文完成
 # ============================================
 
 # ============= 唱歌参数 =====================
-singUrl = "127.0.0.1:1717"
+singUrl = "192.168.2.58:1717"
 SongQueueList = queue.Queue()  # 唱歌队列
 is_singing = 2  # 1.唱歌中 2.唱歌完成
 is_creating_song = 2  # 1.生成中 2.生成完毕
@@ -131,7 +131,7 @@ room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
 
 # ============= api web =====================
 app = Flask(__name__,template_folder='./html')
-if mode==2:
+if mode==1 or mode==2 or mode==3:
    sched1 = APScheduler()
    sched1.init_app(app)
 # ============================================
@@ -1334,25 +1334,23 @@ def main():
     # 唤起虚拟摄像头
     outCamera_thread = Thread(target=outCamera)
     outCamera_thread.start()
-    if mode==1 or mode==3:
-        # LLM回复
-        sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
-        # tts语音合成
-        sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
-        # MPV播放
-        sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
-        # 绘画
-        sched1.add_job(check_draw, "interval", seconds=1, id=f"draw", max_instances=4)
-        # 搜图
-        sched1.add_job(check_img_search, "interval", seconds=1, id=f"img_search", max_instances=4)
-        # 搜文
-        sched1.add_job(check_text_search, "interval", seconds=1, id=f"text_search", max_instances=4)
-        # 唱歌
-        sched1.add_job(check_sing, "interval", seconds=1, id=f"sing", max_instances=4)
-        sched1.start()
-        # 开始监听弹幕流
-        sync(room.connect())
-    if mode==2:
+    # if mode==1 or mode==2 or mode==3:
+    #     # LLM回复
+    #     sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
+    #     # tts语音合成
+    #     sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
+    #     # MPV播放
+    #     sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
+    #     # 绘画
+    #     sched1.add_job(check_draw, "interval", seconds=1, id=f"draw", max_instances=4)
+    #     # 搜图
+    #     sched1.add_job(check_img_search, "interval", seconds=1, id=f"img_search", max_instances=4)
+    #     # 搜文
+    #     sched1.add_job(check_text_search, "interval", seconds=1, id=f"text_search", max_instances=4)
+    #     # 唱歌
+    #     sched1.add_job(check_sing, "interval", seconds=1, id=f"sing", max_instances=4)
+    #     sched1.start()
+    if mode==1 or mode==2 or mode==3:
         # LLM回复
         sched1.add_job(func=check_answer, trigger="interval", seconds=1, id=f"answer", max_instances=4)
         # tts语音合成
@@ -1368,8 +1366,17 @@ def main():
         sched1.start()
     if mode==1 or mode==2 or mode==3:
         # 开启web
-        app.run(host="0.0.0.0", port=1800)
+        app_thread = Thread(target=apprun)
+        app_thread.start()
+    if mode==1:
+        # 开始监听弹幕流
+        sync(room.connect())
+
+def brun():
+    sync(room.connect())
     
+def apprun():
+    app.run(host="0.0.0.0", port=1800)  
 
 # 授权Vtuber服务
 def auth():
