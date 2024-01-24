@@ -27,7 +27,7 @@ from threading import Thread
 from peft import PeftModel
 from transformers import AutoTokenizer, AutoModel, AutoConfig
 from urllib.parse import quote
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 from flask_apscheduler import APScheduler
 from urllib import parse
 
@@ -60,6 +60,7 @@ AnswerList = queue.Queue()
 MpvList = queue.Queue()
 EmoteList = queue.Queue()
 LogsList = queue.Queue()
+ReplyTextList = queue.Queue()
 history = []
 is_ai_ready = True  # 定义ai回复是否转换完成标志
 is_tts_ready = True  # 定义语音是否生成完成标志
@@ -111,7 +112,7 @@ is_SearchText = 2  # 1.搜文中 2.搜文完成
 # ============================================
 
 # ============= 唱歌参数 =====================
-singUrl = "192.168.2.58:1717"
+singUrl = "127.0.0.1:1717"
 SongQueueList = queue.Queue()  # 唱歌队列
 is_singing = 2  # 1.唱歌中 2.唱歌完成
 is_creating_song = 2  # 1.生成中 2.生成完毕
@@ -121,7 +122,7 @@ is_creating_song = 2  # 1.生成中 2.生成完毕
 # b站直播身份验证：
 #实例化 Credential 类
 cred = Credential(
-    sessdata="c743c891%2C1721135476%2C814be%2A11CjDT8r07mYmnbyG-Q-NZ3eKPse-DJxx8-TDhDBxJzOWSCF_XuY8T-GS6nxwvjdWut5sSVkg1UF83Rm9qWXZoQXRMMnBhNXNlbVo3VkVoTk5LbG1EbWczYkRpSEhwSUpOS1MtWEJHTWNRNVkyNnBheHI2LXV0aUYxQ1k0enJRWUE2MC1XNmYxZ0FBIIEC",
+    sessdata="c67e5f93%2C1721397580%2C68b77%2A12CjAFTBqU5Q1q_y00w6udgGbAJphFphes_P7dqTNgNQ8mowvltzccYOX-VnBXD7MBPkMSVklWUV93QkJRbE5Fb2ZPSHY5bHZHQ0xRd1JyaEEwOXN4WFEwczJFWWVMNHBKQVJndHZTNVFNQWZhdWtndThFNjFtaU83OS1mNElHQ0RKS19IMm1pTHpRIIEC",
     buvid3="C08180D1-DDCD-1766-0162-FB77DF0BDAE597566infoc",
 )
 room_id = int(input("输入你的B站直播间编号: ") or "31814714")  # 输入直播间编号
@@ -129,7 +130,7 @@ room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
 # ============================================
 
 # ============= api web =====================
-app = Flask(__name__)
+app = Flask(__name__,template_folder='./html')
 if mode==2:
    sched1 = APScheduler()
    sched1.init_app(app)
@@ -161,7 +162,7 @@ async def in_liveroom(event):
     time1 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S") 
     print(f"{time1}:粉丝\033[36m[{user_name}]\033[0m进入了直播间")
     # 直接放到语音合成处理
-    AnswerList.put(f"欢迎{user_name}来到吟美的直播间")
+    tts_say(f"欢迎{user_name}来到吟美的直播间")
     # 进入直播间根据用户名绘图
     draw_json = {"prompt": user_name, "username": user_name}
     # 加入绘画队列
@@ -183,6 +184,21 @@ def input_msg():
     msg_deal(query,user_name)
     return jsonify({"status": "成功"})
 
+# 聊天回复弹框处理
+@app.route("/chatreply", methods=["GET"])
+def chatreply():
+    global ReplyTextList
+    CallBackForTest=request.args.get('CallBack')
+    text=""
+    status="失败"
+    if not ReplyTextList.empty():
+        text = ReplyTextList.get();
+        status = "成功"
+    str = "({\"status\": \""+status+"\",\"content\": \""+text+"\"})"
+    if CallBackForTest is not None:
+           str=CallBackForTest+str
+    return str
+
 def msg_deal(query,user_name):
     """
     处理弹幕消息
@@ -194,6 +210,7 @@ def msg_deal(query,user_name):
     query=filter(query,filterCh)
     print(f"\033[36m[{user_name}]\033[0m:{query}")  # 打印弹幕信息
     if not QuestionList.full():
+        #tts_say(query)
         #命令执行
         status = cmd(query)  
         if status==1:
@@ -384,7 +401,8 @@ def ai_response():
 
     answer = f"回复{user_name}：{response}"
     # 加入回复列表，并且后续合成语音
-    AnswerList.put(f"{query}" + "," + answer)
+    tts_say(f"{query}" + "," + answer)
+
     current_question_count = QuestionList.qsize()
     print(f"\033[31m[AI回复]\033[0m{answer}")  # 打印AI回复信息
     print(
@@ -460,7 +478,7 @@ def check_text_search():
         searchStr = web_search(prompt)
         out = f"回复{username}：我搜索到的内容如下：{searchStr}"
         print(out)
-        AnswerList.put(out)
+        tts_say(out)
         is_SearchText = 2  # 搜文完成
 
 # 搜图任务
@@ -528,7 +546,6 @@ def check_answer():
     """
     global is_ai_ready
     global QuestionList
-    global AnswerList
     if not QuestionList.empty() and is_ai_ready:
         is_ai_ready = False
         answers_thread = Thread(target=aiResponseTry)
@@ -547,7 +564,7 @@ def check_tts():
 def bert_vits2(filename,text,emotion):
     save_path=f".\output\{filename}.mp3"
     text=parse.quote(text)
-    response = requests.get(url=f"http://127.0.0.1:5000/voice?text={text}&model_id=0&speaker_name=刻晴[中]&sdp_ratio=0.2&noise=0.2&noisew=0.9&length=1&language=ZH&auto_translate=false&auto_split=true&emotion={emotion}")
+    response = requests.get(url=f"http://127.0.0.1:5000/voice?text={text}&model_id=0&speaker_name=珊瑚宫心海[中]&sdp_ratio=0.2&noise=0.2&noisew=0.9&length=1&language=AUTO&auto_translate=false&auto_split=true&emotion={emotion}")
     if response.status_code == 200:
        audio_data = response.content # 获取音频数据
        with open(save_path, 'wb') as file:
@@ -585,6 +602,9 @@ def tts_say(text):
     # 输出表情
     emote_thread = Thread(target=emote_show,args=(jsonstr,))
     emote_thread.start()
+    
+    #输出回复字幕
+    ReplyTextList.put(text)
 
     # 播放声音
     mpv_play(f".\output\{filename}.mp3",100)
@@ -635,6 +655,7 @@ def tts_generate():
     # 表情加入:使用键盘控制VTube
     emote = response[end_name : len(response)]
     EmoteList.put(f"{emote}")
+    
     # 加入音频播放列表
     MpvList.put(AudioCount)
     AudioCount += 1
@@ -1345,7 +1366,7 @@ def main():
         # 唱歌
         sched1.add_job(func=check_sing, trigger="interval", seconds=1, id=f"sing", max_instances=4)
         sched1.start()
-    if mode==2 or mode==3:
+    if mode==1 or mode==2 or mode==3:
         # 开启web
         app.run(host="0.0.0.0", port=1800)
     
