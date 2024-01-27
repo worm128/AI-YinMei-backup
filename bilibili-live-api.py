@@ -163,10 +163,15 @@ async def in_liveroom(event):
     print(f"{time1}:粉丝\033[36m[{user_name}]\033[0m进入了直播间")
     # 直接放到语音合成处理
     tts_say(f"欢迎{user_name}来到吟美的直播间")
-    # 进入直播间根据用户名绘图
-    draw_json = {"prompt": user_name, "username": user_name}
-    # 加入绘画队列
-    DrawQueueList.put(draw_json)
+    
+    #判断游客的不进行绘画
+    text = ["bili"]
+    num = is_array_contain_string(text, user_name)
+    if num==0:
+        # 进入直播间根据用户名绘图
+        draw_json = {"prompt": user_name, "username": user_name}
+        # 加入绘画队列
+        DrawQueueList.put(draw_json)
 
 # B站弹幕处理
 @room.on("DANMU_MSG")  # 弹幕消息事件回调函数
@@ -572,11 +577,20 @@ def bert_vits2(filename,text,emotion):
             if filenum>0:
                 return 1
     return 0
-         
+
+# 直接合成语音播放       
+def tts_say(text):
+    try:
+        say_lock.acquire()
+        tts_say_do(text)
+    except Exception as e:
+        print(f"tts_say发生了异常：{e}")
+        traceback.print_exc()
+    finally:
+        say_lock.release()
 
 # 直接合成语音播放
-def tts_say(text):
-    say_lock.acquire()
+def tts_say_do(text):
     global SayCount
     filename=f"say{SayCount}"
     
@@ -613,7 +627,7 @@ def tts_say(text):
     subprocess.run(f"del /f .\output\say{SayCount}.mp3 1>nul", shell=True)
     # subprocess.run(f"del /f .\output\say{SayCount}.txt 1>nul", shell=True)
     SayCount += 1
-    say_lock.release()
+    
 
 # 从回复队列中提取一条，通过edge-tts生成语音对应AudioCount编号语音
 def tts_generate():
@@ -864,7 +878,10 @@ def sing(songname, username):
 
     # =============== 开始：如果不存在歌曲，生成歌曲 =================
     if is_created == 0:
+        # 播报绘画
         print(f"歌曲不存在，需要生成歌曲《{songname}》")
+        outputTxt=f"回复{username}：歌曲《{songname}》需要转换，请耐心等待"
+        tts_say(outputTxt)
         # 其他歌曲在生成的时候等待
         while is_creating_song == 1:
             time.sleep(1)
