@@ -31,5 +31,18 @@ from urllib import parse
 
 # check_encoding('å\x8f\x88æ\x98¯æ¸\x85æ\x98\x8eé\x9b¨ä¸\x8a æ\x8a\x98è\x8f\x8aå¯\x84å\x88°ä½\xa0èº«æ\x97\x81')
 
-text=parse.quote("你好")
-print(text)
+# 判断字符位置（不含搜索字符）- 如，搜索“画画女孩”，则输出“女孩”位置
+def is_index_contain_string(string_array, target_string):
+    i = 0
+    for s in string_array:
+        i = i + 1
+        if s in target_string:
+            num = target_string.find(s)
+            return num + len(s)
+    return 0
+
+text = ["唱一下", "唱一首", "唱歌", "唱"]
+num = is_index_contain_string(text, "又是这个高端歌，吟美唱死")
+print(num)
+# text=parse.quote("你好")
+# print(text)

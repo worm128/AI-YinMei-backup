@@ -16,6 +16,8 @@ import random
 import re
 import traceback
 import websocket
+import crawler
+import logging
 
 from io import BytesIO
 from PIL import Image
@@ -38,10 +40,15 @@ print(
 )
 print("源码地址：https://github.com/worm128/ai-yinmei")
 print("开发者：Winlone")
+print("QQ群：27831318")
 print("=====================================================================")
 
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 sched1 = AsyncIOScheduler(timezone="Asia/Shanghai")
+#设置控制台日志
+logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(levelname)s %(filename)s %(name)s 日志信息:%(message)s', handlers=[logging.StreamHandler()])
+
+
 #1.b站直播间 2.api web 3.双开
 mode=int(input("1.b站直播间 2.api web 3.双开: ") or "2")
 
@@ -122,7 +129,7 @@ is_creating_song = 2  # 1.生成中 2.生成完毕
 # b站直播身份验证：
 #实例化 Credential 类
 cred = Credential(
-    sessdata="c67e5f93%2C1721397580%2C68b77%2A12CjAFTBqU5Q1q_y00w6udgGbAJphFphes_P7dqTNgNQ8mowvltzccYOX-VnBXD7MBPkMSVklWUV93QkJRbE5Fb2ZPSHY5bHZHQ0xRd1JyaEEwOXN4WFEwczJFWWVMNHBKQVJndHZTNVFNQWZhdWtndThFNjFtaU83OS1mNElHQ0RKS19IMm1pTHpRIIEC",
+    sessdata="665e41df%2C1721667481%2C2d18f%2A12CjDseVrSn_ZeN63S-lqh2zd9LCP3mjKeU6VjISryWmdb6mraoy2uV91re0KydgHHIXISVktiRmV6ZWNQMllnMzM2X25SQm9VTV96NjFLSnNxUGx0LURRLUxZcTdjOXRFNExoY25yMW0yS3hTdnVXUU83QldVODcwQlo4LWdxd0pnN3BVVmwtRkl3IIEC",
     buvid3="C08180D1-DDCD-1766-0162-FB77DF0BDAE597566infoc",
 )
 room_id = int(input("输入你的B站直播间编号: ") or "31814714")  # 输入直播间编号
@@ -131,6 +138,9 @@ room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
 
 # ============= api web =====================
 app = Flask(__name__,template_folder='./html')
+#关闭页面日志
+my_logging = logging.getLogger("werkzeug")
+my_logging.setLevel('ERROR')
 if mode==1 or mode==2 or mode==3:
    sched1 = APScheduler()
    sched1.init_app(app)
@@ -148,7 +158,7 @@ ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
 filterEn="huge breasts,open clothes,topless,voluptuous,breast,prostitution,erotic,armpit,milk,leaking,spraying,woman,cupless latex,latex,tits,boobs,lingerie,chest,seductive,poses,pose,leg,posture,alluring,milf,on bed,mature,slime,open leg,full body,bra,lace,bikini,full nude,nude,bare,one-piece,navel,cleavage,swimsuit,naked,adult,nudity,beautiful breasts,nipples,sex,Sexual,vaginal,penis,large penis,pantie,leotards,anal"
 filterCh="屁股,奶子,乳房,乳胶,劈叉,走光,女优,男优,嫖娼,淫荡,性感,性爱,做爱,裸体,赤裸,肛门"
 progress_limit=10   #绘图大于多少百分比进行鉴黄
-nsfw_limit=0.2  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
+nsfw_limit=0.4  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
 # ============================================
 
 print("--------------------")
@@ -269,7 +279,7 @@ def msg_deal(query,user_name):
             return
 
         # 唱歌
-        text = ["唱一下", "唱一首", "唱歌", "唱"]
+        text = ["唱一下", "唱一首", "唱歌"]
         num = is_index_contain_string(text, query)
         if num > 0:
             queryExtract = query[num : len(query)]  # 提取提问语句
@@ -472,6 +482,13 @@ def web_search_img(query):
             traceback.print_exc()
     return imgUrl
 
+# 百度搜图
+def baidu_search_img(query):
+    imageNum = 100
+    images = crawler.baidu_get_image_url(query,imageNum)
+    random_number = random.randrange(1, len(images))
+    return images[random_number]
+
 # 搜文任务
 def check_text_search():
     global is_SearchText
@@ -497,12 +514,15 @@ def check_img_search():
         is_SearchImg = 2  # 搜图完成
 
 # 输出图片到虚拟摄像头
-def searchimg_output_camera(prompt):
+def searchimg_output_camera(img_search_json):
     try:
-        imgUrl = web_search_img(prompt)
-        image = output_img(imgUrl)
+        prompt = img_search_json["prompt"]
+        username = img_search_json["username"]
+        imgUrl = baidu_search_img(prompt)
+        image = output_search_img(imgUrl,prompt,username)
         # 虚拟摄像头输出
-        CameraOutList.put(image)
+        if image is not None:
+           CameraOutList.put(image)
     except Exception as e:
         print(f"发生了异常：{e}")
         traceback.print_exc()
@@ -515,8 +535,9 @@ def output_img_thead(img_search_json):
     prompt = img_search_json["prompt"]
     username = img_search_json["username"]
     try:
+        img_search_json = {"prompt": prompt, "username": username}
         # 搜索并且输出图片到虚拟摄像头
-        imgUrl = searchimg_output_camera(prompt)
+        imgUrl = searchimg_output_camera(img_search_json)
         img_search_json2 = {"prompt": prompt, "username": username, "imgUrl": imgUrl}
         print(f"搜图内容:{img_search_json2}")
         # 加入回复列表，并且后续合成语音
@@ -530,9 +551,38 @@ def output_img_thead(img_search_json):
 
 
 # 搜图输出虚拟摄像头
-def output_img(imgUrl):
-    response = requests.get(imgUrl, proxies=proxies)
+def output_search_img(imgUrl,prompt,username):
+    response = requests.get(imgUrl)
     img_data = response.content
+
+    imgb64 = base64.b64encode(img_data)
+    #===============最终图片鉴黄====================
+    nsfwJson = nsfw_deal(imgb64)
+    print(f"《{prompt}》【最终】鉴黄结果:{nsfwJson}")
+    status = nsfwJson["status"]
+    if status=="失败":
+        print(f"《{prompt}》【最终】鉴黄失败，图片不明确跳出")
+        return 
+    nsfw = nsfwJson["nsfw"]
+    #发现黄图
+    try:
+        if status=="成功" and nsfw>nsfw_limit:
+            print(f"《{prompt}》【最终】搜图完成，发现黄图:{nsfw},马上退出")
+            nsfw_stop_image()
+            # 保存用户的黄图，留底观察
+            img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
+            img.save(f"./porn/{prompt}_{username}.jpg")
+            # 播报搜图
+            outputTxt=f"回复{username}：发现一张黄图《{prompt}》，禁止搜图"
+            print(outputTxt)
+            tts_say(outputTxt)
+            return
+    except Exception as e:
+        print(f"《{prompt}》【最终】鉴黄发生了异常：{e}")
+        traceback.print_exc()
+        return
+    #========================================================
+
     # 读取二进制字节流
     img = Image.open(BytesIO(img_data))
     img = img.resize((width, height), Image.LANCZOS)
@@ -880,7 +930,7 @@ def sing(songname, username):
     if is_created == 0:
         # 播报绘画
         print(f"歌曲不存在，需要生成歌曲《{songname}》")
-        outputTxt=f"回复{username}：歌曲《{songname}》需要转换，请耐心等待"
+        outputTxt=f"回复{username}：吟美需要学唱歌曲《{songname}》，请耐心等待"
         tts_say(outputTxt)
         # 其他歌曲在生成的时候等待
         while is_creating_song == 1:
@@ -1381,18 +1431,26 @@ def main():
         # 唱歌
         sched1.add_job(func=check_sing, trigger="interval", seconds=1, id=f"sing", max_instances=4)
         sched1.start()
+    
     if mode==1 or mode==2 or mode==3:
         # 开启web
         app_thread = Thread(target=apprun)
         app_thread.start()
+        
     if mode==1:
         # 开始监听弹幕流
         sync(room.connect())
+    else:
+        while True:
+           time.sleep(10)
 
 def brun():
     sync(room.connect())
     
 def apprun():
+    # 禁止输出日志
+    app.logger.disabled = True
+    # 启动web应用
     app.run(host="0.0.0.0", port=1800)  
 
 # 授权Vtuber服务
