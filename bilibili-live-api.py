@@ -46,8 +46,13 @@ print("=====================================================================")
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 sched1 = AsyncIOScheduler(timezone="Asia/Shanghai")
 #设置控制台日志
-logging.basicConfig(level=logging.ERROR, format='%(asctime)s %(levelname)s %(filename)s %(name)s 日志信息:%(message)s', handlers=[logging.StreamHandler()])
-
+today = datetime.date.today().strftime("%Y-%m-%d")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(filename)s %(name)s %(message)s',handlers=[logging.StreamHandler(),logging.FileHandler(f"./logs/log_{today}.txt")])
+my_logging = logging.getLogger("apscheduler.executors.default")
+my_logging.setLevel('ERROR')
+# 重定向print输出到日志文件
+def print(*args, **kwargs):
+    logging.info(*args, **kwargs)
 
 #1.b站直播间 2.api web 3.双开
 mode=int(input("1.b站直播间 2.api web 3.双开: ") or "2")
@@ -340,7 +345,7 @@ def cmd(query):
     if query=="\\next":
         os.system('taskkill /T /F /IM mpv.exe')
         is_singing = 2  # 1.唱歌中 2.唱歌完成
-        is_creating_song = 2  # 1.生成中 2.生成完毕
+        # is_creating_song = 2  # 1.生成中 2.生成完毕
         is_ai_ready = True  # 定义ai回复是否转换完成标志
         return 1
     return 0
@@ -536,7 +541,7 @@ def searchimg_output_camera(img_search_json):
         prompt = img_search_json["prompt"]
         username = img_search_json["username"]
         # 百度搜图
-        imgUrl = baidu_search_img(prompt)
+        imgUrl = baidu_search_img("歌曲"+prompt)
         img_search_json2 = {"prompt": prompt, "username": username, "imgUrl": imgUrl}
         print(f"搜图内容:{img_search_json2}")
         if imgUrl is not None:
