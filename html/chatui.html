@@ -9,16 +9,22 @@
 		<style>
             /* Transparent background */
             body {
-            background-color: transparent !important;
+                background-color: transparent !important;
             }
 			#chat {
 				width: 800px; height:400px; overflow: hidden; 
             }
 			#content {
-            animation: scrollUp 3s linear infinite;
-			font-size: 40px; font-weight: bold; color: white; word-wrap: break-word;overflow:hidden;
-			line-height: 52px; font-family:"微软雅黑"; letter-spacing:5px; text-shadow: 1px 1px 3px #000000;
+                width: auto; height:auto; 
             }
+			#content .area{
+			    background-color: #b91919; color: white; line-height: 43px;
+				font-size: 32px; font-weight: bold; word-wrap: break-word;overflow:hidden;
+				letter-spacing:5px; font-family:"微软雅黑";
+				margin-bottom: 10px; padding: 10px; width: auto; height: auto; 
+				-webkit-border-radius: 15px; text-shadow: 1px 1px 3px #000000;
+				border: solid 1px #4e4e4e; box-shadow: 0px 1px 1px 0px #4e4e4e;
+			}
         </style>
 		<script type="text/javascript" src="jquery-3.7.1.min.js"></script>
 	</head>
@@ -30,19 +36,22 @@
 		<script type="text/javascript">
 			function typewriter(text) {
 				var i = 0; // 当前要显示的字符索引
-				
+
+				var colors = ["#b91919", "#2c2cff", "#02c01b","#ffa724","#ff2476","#00BFFF","#9932CC","#C71585","#DC143C","#FF7F50"];
+				var randomNumber = Math.floor(Math.random() * colors.length)
+				$("#content").last().append("<div class=\"area\" style=\"background-color:"+colors[randomNumber]+"\"></div>")
 				function showChar() {
 					if (i < text.length) {
-						document.getElementById("content").innerHTML += text[i]; // 将当前字符添加到页面元素中
+						$("#content div").last().append(text[i]);
 						//滚动到底部
-						document.getElementById("chat").scrollTop = document.getElementById("content").scrollHeight;
+						$("#chat").scrollTop($("#content").height());
 						i++; // 更新索引值
 						setTimeout(showChar, 200); // 每次间隔xx调用自身，模拟打字效果
 					} else {
 						console.log('完成'); // 所有字符都已经输出完毕时触发此行代码
-						text = document.getElementById("content").innerHTML
-						if(text.length>300)
-						   document.getElementById("content").innerHTML = ""
+						var count = $('#content div').length;
+						if(count>50)
+						  $('#content div').slice(0, 20).remove();
 					}
 				}
 				
@@ -63,7 +72,7 @@
                     success: function (data) {
 						if(data["status"]=="成功")
 						{
-						    content = data["content"] + " "
+						    content = data["content"]
 						    typewriter(content)
 						}
                     }

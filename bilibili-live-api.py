@@ -129,7 +129,7 @@ is_creating_song = 2  # 1.生成中 2.生成完毕
 # b站直播身份验证：
 #实例化 Credential 类
 cred = Credential(
-    sessdata="665e41df%2C1721667481%2C2d18f%2A12CjDseVrSn_ZeN63S-lqh2zd9LCP3mjKeU6VjISryWmdb6mraoy2uV91re0KydgHHIXISVktiRmV6ZWNQMllnMzM2X25SQm9VTV96NjFLSnNxUGx0LURRLUxZcTdjOXRFNExoY25yMW0yS3hTdnVXUU83QldVODcwQlo4LWdxd0pnN3BVVmwtRkl3IIEC",
+    sessdata="4cabb314%2C1721954005%2C8589e%2A12CjBZyjXga6HMJBU70wJdyxzZrp-oTKqi9dXhC7CAWF-Xar_Lw1YpoHjr07WJIFM0bu4SVmhEOWwxZkJRZl93X0NudmFSSFlvZWhXeHZVLVV2YzV3RHpjQllqZVpIWE1UY3hmbVA1dFlmcW9LdmMzUDkwMGlrbXVFYU9lbHBsX0s3cENTVkQwLUJnIIEC",
     buvid3="C08180D1-DDCD-1766-0162-FB77DF0BDAE597566infoc",
 )
 room_id = int(input("输入你的B站直播间编号: ") or "31814714")  # 输入直播间编号
@@ -159,6 +159,7 @@ filterEn="huge breasts,open clothes,topless,voluptuous,breast,prostitution,eroti
 filterCh="屁股,奶子,乳房,乳胶,劈叉,走光,女优,男优,嫖娼,淫荡,性感,性爱,做爱,裸体,赤裸,肛门"
 progress_limit=10   #绘图大于多少百分比进行鉴黄
 nsfw_limit=0.4  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
+nsfw_lock = threading.Lock()
 # ============================================
 
 print("--------------------")
@@ -199,10 +200,12 @@ def input_msg():
     msg_deal(query,user_name)
     return jsonify({"status": "成功"})
 
+chatreply_lock = threading.Lock()
 # 聊天回复弹框处理
 @app.route("/chatreply", methods=["GET"])
 def chatreply():
     global ReplyTextList
+    chatreply_lock.acquire()
     CallBackForTest=request.args.get('CallBack')
     text=""
     status="失败"
@@ -211,8 +214,17 @@ def chatreply():
         status = "成功"
     str = "({\"status\": \""+status+"\",\"content\": \""+text+"\"})"
     if CallBackForTest is not None:
-           str=CallBackForTest+str
+        str=CallBackForTest+str
+    chatreply_lock.release()
     return str
+
+# 点播歌曲列表
+@app.route("/songlist", methods=["GET"])
+def songlist():
+    jsonstr ={}
+    for songname in list(SongQueueList):
+        jsonstr.append({"songname":songname})
+    return jsonstr
 
 def msg_deal(query,user_name):
     """
@@ -370,7 +382,7 @@ def aiResponseTry():
     try:
         ai_response()
     except Exception as e:
-        print(f"ai_response发生了异常：{e}")
+        print(f"【ai_response】发生了异常：{e}")
         traceback.print_exc()
         is_ai_ready=True
 
@@ -484,10 +496,15 @@ def web_search_img(query):
 
 # 百度搜图
 def baidu_search_img(query):
-    imageNum = 100
-    images = crawler.baidu_get_image_url(query,imageNum)
-    random_number = random.randrange(1, len(images))
-    return images[random_number]
+    imageNum = 10
+    img_search_json = {"query": query, "width": 800, "height": 600}
+    images = crawler.baidu_get_image_url_regx(img_search_json,imageNum)
+    count = len(images)
+    print(f"搜图《{query}》数量：{count}")
+    if count>0:
+        random_number = random.randrange(0, count-1)
+        return images[random_number]
+    return
 
 # 搜文任务
 def check_text_search():
@@ -518,15 +535,22 @@ def searchimg_output_camera(img_search_json):
     try:
         prompt = img_search_json["prompt"]
         username = img_search_json["username"]
+        # 百度搜图
         imgUrl = baidu_search_img(prompt)
-        image = output_search_img(imgUrl,prompt,username)
-        # 虚拟摄像头输出
-        if image is not None:
-           CameraOutList.put(image)
+        img_search_json2 = {"prompt": prompt, "username": username, "imgUrl": imgUrl}
+        print(f"搜图内容:{img_search_json2}")
+        if imgUrl is not None:
+            image = output_search_img(imgUrl,prompt,username)
+            # 虚拟摄像头输出
+            if image is not None:
+                CameraOutList.put(image)
+                return 1
+        return 0
     except Exception as e:
-        print(f"发生了异常：{e}")
+        print(f"【searchimg_output_camera】发生了异常：{e}")
         traceback.print_exc()
-    return imgUrl
+        return 0
+
 
 # 搜索引擎-搜图任务
 def output_img_thead(img_search_json):
@@ -537,49 +561,38 @@ def output_img_thead(img_search_json):
     try:
         img_search_json = {"prompt": prompt, "username": username}
         # 搜索并且输出图片到虚拟摄像头
-        imgUrl = searchimg_output_camera(img_search_json)
-        img_search_json2 = {"prompt": prompt, "username": username, "imgUrl": imgUrl}
-        print(f"搜图内容:{img_search_json2}")
-        # 加入回复列表，并且后续合成语音
-        tts_say(f"回复{username}：我给你搜了一张图《{prompt}》")
-        time.sleep(10)  # 等待图片展示
+        status = searchimg_output_camera(img_search_json)
+        if status==1:
+            # 加入回复列表，并且后续合成语音
+            tts_say(f"回复{username}：我给你搜了一张图《{prompt}》")
+        else:
+            tts_say(f"回复{username}：搜索图片《{prompt}》失败")
     except Exception as e:
-        print(f"发生了异常：{e}")
+        print(f"【output_img_thead】发生了异常：{e}")
         traceback.print_exc()
     finally:
         print(f"‘{username}’搜图《{prompt}》结束")
 
 
-# 搜图输出虚拟摄像头
+# 图片转换字节流
 def output_search_img(imgUrl,prompt,username):
     response = requests.get(imgUrl)
     img_data = response.content
 
     imgb64 = base64.b64encode(img_data)
     #===============最终图片鉴黄====================
-    nsfwJson = nsfw_deal(imgb64)
-    print(f"《{prompt}》【最终】鉴黄结果:{nsfwJson}")
-    status = nsfwJson["status"]
-    if status=="失败":
-        print(f"《{prompt}》【最终】鉴黄失败，图片不明确跳出")
-        return 
-    nsfw = nsfwJson["nsfw"]
-    #发现黄图
-    try:
-        if status=="成功" and nsfw>nsfw_limit:
-            print(f"《{prompt}》【最终】搜图完成，发现黄图:{nsfw},马上退出")
-            nsfw_stop_image()
-            # 保存用户的黄图，留底观察
-            img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
-            img.save(f"./porn/{prompt}_{username}.jpg")
-            # 播报搜图
-            outputTxt=f"回复{username}：发现一张黄图《{prompt}》，禁止搜图"
-            print(outputTxt)
-            tts_say(outputTxt)
-            return
-    except Exception as e:
-        print(f"《{prompt}》【最终】鉴黄发生了异常：{e}")
-        traceback.print_exc()
+    status = nsfw_fun(imgb64,prompt,username,5,"搜图",0.6)
+    # 鉴黄失败
+    if status==-1:
+        outputTxt=f"回复{username}：搜图鉴黄失败《{prompt}》，禁止执行"
+        print(outputTxt)
+        tts_say(outputTxt)
+        return
+    # 黄图情况
+    if status==0:
+        outputTxt=f"回复{username}：搜图发现一张黄图《{prompt}》，禁止执行"
+        print(outputTxt)
+        tts_say(outputTxt)
         return
     #========================================================
 
@@ -592,6 +605,48 @@ def output_search_img(imgUrl,prompt,username):
     image = image[:, :, [2, 1, 0]]
     return image
 
+# 鉴黄：1.通过 0.禁止 -1.异常
+def nsfw_fun(imgb64,prompt,username,retryCount,tip,nsfw_limit):
+    #===============图片鉴黄====================
+    try:
+        nsfw_lock.acquire()
+        nsfwJson = nsfw_deal(imgb64)
+    except Exception as e:
+        print(f"《{prompt}》【nsfw】鉴黄{tip}发生了异常：{e}")
+        traceback.print_exc()
+        return -1
+    finally:
+        nsfw_lock.release()
+
+    #===============鉴黄判断====================
+    print(f"《{prompt}》【nsfw】{tip}鉴黄结果:{nsfwJson}")
+    status = nsfwJson["status"]
+    if status=="失败":
+        print(f"《{prompt}》【nsfw】【重试剩余{retryCount}次】{tip}鉴黄失败，图片不明确跳出")
+        retryCount=retryCount-1
+        if retryCount>0:
+            nsfw_fun(imgb64,prompt,username,retryCount,tip,nsfw_limit)
+        return -1
+    nsfw = nsfwJson["nsfw"]
+    #发现黄图
+    try:
+        if status=="成功" and nsfw>nsfw_limit:
+            print(f"《{prompt}》【nsfw】{tip}完成，发现黄图:{nsfw},马上退出")
+            # 摄像头显示禁止黄图标识
+            nsfw_stop_image()
+            # 保存用户的黄图，留底观察
+            img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
+            timestamp = time.time()
+            img.save(f"./porn/{prompt}_{username}_{nsfw}_{timestamp}.jpg")
+            return 0
+        elif status=="成功":
+            return 1
+        return -1
+    except Exception as e:
+        print(f"《{prompt}》【nsfw】鉴黄{tip}发生了异常：{e}")
+        traceback.print_exc()
+        return -1
+    #========================================================
 
 # 检查LLM回复线程
 def check_answer():
@@ -634,7 +689,7 @@ def tts_say(text):
         say_lock.acquire()
         tts_say_do(text)
     except Exception as e:
-        print(f"tts_say发生了异常：{e}")
+        print(f"【tts_say】发生了异常：{e}")
         traceback.print_exc()
     finally:
         say_lock.release()
@@ -893,7 +948,7 @@ def singTry(songname, username):
         if songname!="":
            sing(songname, username)
     except Exception as e:
-        print(f"发生了异常：{e}")
+        print(f"【singTry】发生了异常：{e}")
         traceback.print_exc()
         is_singing = 2
         is_creating_song=2
@@ -903,7 +958,8 @@ def sing(songname, username):
     global is_singing
     global is_creating_song
     is_created = 0  # 1.已经生成过 0.没有生成过 2.生成失败
-
+    
+    query = songname # 查询内容
     # =============== 开始-获取真实歌曲名称 =================
     musicJson = requests.get(url=f"http://{singUrl}/musicInfo/{songname}")
     music_json = json.loads(musicJson.text)
@@ -914,6 +970,8 @@ def sing(songname, username):
     # =============== 开始-判断本地是否有歌 =================
     if os.path.exists(song_path):
         print(f"找到存在本地歌曲:{song_path}")
+        outputTxt=f"回复{username}：吟美会唱《{songname}》这首歌曲哦"
+        tts_say(outputTxt)
         is_created = 1
     # =============== 结束-判断本地是否有歌 =================
     else:
@@ -946,7 +1004,7 @@ def sing(songname, username):
     while is_singing == 1:
         time.sleep(1)
     # =============== 开始：播放歌曲 =================
-    play_song(is_created,songname,song_path,username)
+    play_song(is_created,songname,song_path,username,query)
     # =============== 结束：播放歌曲 =================   
 
 #开始生成歌曲
@@ -989,7 +1047,7 @@ def create_song(songname,song_path,is_created,downfile):
     return is_created
 
 # 播放歌曲
-def play_song(is_created,songname,song_path,username):
+def play_song(is_created,songname,song_path,username,query):
     global is_singing
     try:
         play_song_lock.acquire()
@@ -998,7 +1056,8 @@ def play_song(is_created,songname,song_path,username):
         if is_created == 1:
             print(f"准备唱歌《{songname}》,播放路径:{song_path}")
             # =============== 开始-触发搜图 =================
-            searchimg_output_camera_thread = Thread(target=searchimg_output_camera,args=(songname,))
+            img_search_json = {"prompt": query, "username": username}
+            searchimg_output_camera_thread = Thread(target=searchimg_output_camera,args=(img_search_json,))
             searchimg_output_camera_thread.start()
             # =============== 结束-触发搜图 =================
             # 播报唱歌文字
@@ -1103,7 +1162,7 @@ def draw_prompt(query,offset,limit):
         hits_temp = r["results"][0]["hits"]
         hits = []
         # ========== 过滤18禁提示词: ==========
-        # 参数"txt2imgHiRes"是18禁图片，"txt2img"是绿色图片
+        # 参数"txt2imgHiRes"是18禁图片，"txt2img"是绿色图片；nsfw为禁黄标识：None是安全
         for json in hits_temp:
             if json["generationProcess"]=="txt2img" and json["nsfw"]=="None":
                hits.append(json)
@@ -1215,15 +1274,16 @@ def draw(prompt, username):
         #         prompt=jsonPrompt["prompt"]+prompt
         #     negativePrompt = f"EasyNegative, (worst quality, low quality:1.4), [:(badhandv4:1.5):27],(nsfw:1.3)"
         #     flag = 2
+            
         # 迪迦奥特曼
-        text = ["迪迦", "奥特曼"]
-        num = is_index_contain_string(text, drawName)
-        if num>0:
-            checkpoint = "chilloutmix_NiPrunedFp32Fix"
-            prompt = f"(({prompt})),masterpiece, best quality, 1boy, alien, male focus, solo, 1boy, tokusatsu,full body, (giant), railing, glowing eyes, glowing, from below , white eyes,night,  <lora:dijia:1> ,city,building,(Damaged buildings:1.3),tiltshift,(ruins:1.4),<lora:{prompt}>"
-            if jsonPrompt!="":
-                prompt=jsonPrompt["prompt"]+prompt
-            flag = 2
+        # text = ["迪迦", "奥特曼"]
+        # num = is_index_contain_string(text, drawName)
+        # if num>0:
+        #     checkpoint = "chilloutmix_NiPrunedFp32Fix"
+        #     prompt = f"(({prompt})),masterpiece, best quality, 1boy, alien, male focus, solo, 1boy, tokusatsu,full body, (giant), railing, glowing eyes, glowing, from below , white eyes,night,  <lora:dijia:1> ,city,building,(Damaged buildings:1.3),tiltshift,(ruins:1.4),<lora:{prompt}>"
+        #     if jsonPrompt!="":
+        #         prompt=jsonPrompt["prompt"]+prompt
+        #     flag = 2
 
         # 绘画扩展提示词 {"prompt":prompt,"negativePrompt":negativePrompt,"cfgScale":cfgScale,"steps":steps,"sampler":sampler,"seed":seed}
         if flag == 1:
@@ -1266,29 +1326,18 @@ def draw(prompt, username):
         # 读取二进制字节流
         imgb64=r["images"][0]
         #===============最终图片鉴黄====================
-        nsfwJson = nsfw_deal(imgb64)
-        print(f"《{drawName}》【最终】鉴黄结果:{nsfwJson}")
-        status = nsfwJson["status"]
-        if status=="失败":
-           print(f"《{drawName}》【最终】鉴黄失败，图片不明确跳出")
-           return 
-        nsfw = nsfwJson["nsfw"]
-        #发现黄图
-        try:
-            if status=="成功" and nsfw>nsfw_limit:
-                print(f"《{drawName}》【最终】绘画完成，发现黄图:{nsfw},马上退出")
-                nsfw_stop_image()
-                # 保存用户的黄图，留底观察
-                img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
-                img.save(f"./porn/{drawName}_{username}.jpg")
-                # 播报绘画
-                outputTxt=f"回复{username}：发现一张黄图《{drawName}》，禁止绘画"
-                print(outputTxt)
-                tts_say(outputTxt)
-                return
-        except Exception as e:
-            print(f"《{drawName}》【最终】鉴黄发生了异常：{e}")
-            traceback.print_exc()
+        status = nsfw_fun(imgb64,drawName,username,3,"绘画",nsfw_limit)
+        # 鉴黄失败
+        if status==-1:
+            outputTxt=f"回复{username}：绘画鉴黄失败《{drawName}》，禁止执行"
+            print(outputTxt)
+            tts_say(outputTxt)
+            return
+        # 黄图情况
+        if status==0:
+            outputTxt=f"回复{username}：绘画发现一张黄图《{drawName}》，禁止执行"
+            print(outputTxt)
+            tts_say(outputTxt)
             return
         #========================================================
         img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
@@ -1304,7 +1353,7 @@ def draw(prompt, username):
         print(outputTxt)
         tts_say(outputTxt)
     except Exception as e:
-        print(f"draw发生了异常：{e}")
+        print(f"【draw】发生了异常：{e}")
         traceback.print_exc()
     finally:
         is_drawing = 3
@@ -1326,23 +1375,17 @@ def progress(prompt, username):
                 #===============鉴黄, 大于**%进度进行鉴黄====================
                 try:
                     if p>progress_limit:
-                        nsfwJson = nsfw_deal(imgb64)
-                        print(f"《{prompt}》鉴黄结果:{nsfwJson}")
-                        status = nsfwJson["status"]
-                        if status=="失败":
+                        status = nsfw_fun(imgb64,prompt,username,1,"绘画进度",nsfw_limit)
+                        #异常鉴黄
+                        if status==-1:
                             print(f"《{prompt}》进度{p}%鉴黄失败，图片不明确跳出")
                             continue 
-                        nsfw = nsfwJson["nsfw"]
                         #发现黄图
-                        if status=="成功" and nsfw>nsfw_limit:
-                            print(f"《{prompt}》进度{p}%发现黄图:{nsfw},进度跳过")
-                            nsfw_stop_image()
-                            # 保存用户的黄图，留底观察
-                            img = Image.open(io.BytesIO(base64.b64decode(imgb64)))
-                            img.save(f"./porn/{prompt}_{username}_{p}.jpg")
+                        if status==0:
+                            print(f"《{prompt}》进度{p}%发现黄图,进度跳过")
                             continue
                 except Exception as e:
-                    print(f"鉴黄发生了异常：{e}")
+                    print(f"【鉴黄】发生了异常：{e}")
                     traceback.print_exc()
                     continue
                 #========================================================

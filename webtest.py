@@ -1,16 +1,16 @@
 from flask import Flask, jsonify, request, render_template
 
-app = Flask(__name__,template_folder='./html')
+app = Flask(__name__)
 
 content=1
 # 聊天回复弹框处理
-@app.route("/chatreply", methods=["GET"])
+@app.route("/chatreplytest", methods=["GET"])
 def chatreply():
     global content
     CallBackForTest=request.args.get('CallBack')
     print(CallBackForTest)
     content=content+1
-    temp = "({\"content\": \""+str(content)+"\"})"
+    temp = "({\"status\": \"成功\",\"content\": \""+str(content)+"画画鬼灭之刃的美女似懂非懂是否第三方的身份画画鬼灭之刃的美女似懂非懂是否第三方的身份画画鬼灭之刃的美女似懂非懂是否第三方的身份画画鬼灭之刃的美女似懂非懂是否第三方的身份画画鬼灭之刃的美女似懂非懂是否第三方的身份画画鬼灭之刃的美女似懂非懂是否第三方的身份画画鬼灭之刃的美女似懂非懂是否第三方的身份画画鬼灭之刃的美女似懂非懂是否第三方的身份\"})"
     if CallBackForTest is not None:
        temp=CallBackForTest+temp
     return temp

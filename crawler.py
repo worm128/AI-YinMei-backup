@@ -5,6 +5,7 @@ Time: 2021/7/19
 Software: PyCharm
 """
 import json
+import re
 from bs4 import BeautifulSoup as bs
 import requests
 from urllib.parse import unquote, quote
@@ -15,7 +16,7 @@ from concurrent import futures
 微软：https://cn.bing.com/images/trending?FORM=ILPTRD
 """
 
-def baidu_get_image_url_change(keywords, max_number=10000, use_proxy=None, image_type="width"):
+def baidu_get_image_url_regx(data, max_number=10000, use_proxy=None):
     """
     获取百度图片urls
     :param keywords: 关键词
@@ -32,67 +33,18 @@ def baidu_get_image_url_change(keywords, max_number=10000, use_proxy=None, image
             url = url.replace(k, v)
         return url.translate(translate_table)
 
-    base_url = "https://image.baidu.com/search/acjson?tn=resultjson_com&ipn=rj&ct=201326592" \
-               "&lm=7&fp=result&ie=utf-8&oe=utf-8&st=-1&face=0"
+    keywords = data["query"]
+    width = data["width"]
+    height = data["height"]
+
+    base_url = f"https://image.baidu.com/search/acjson?tn=resultjson_com&ipn=rj&ct=201326592" \
+               f"&lm=7&fp=result&ie=utf-8&oe=utf-8&st=-1&face=0&width={width}&height={height}"
     keywords_str = "&word={}&queryWord={}".format(
         quote(keywords), quote(keywords))
     query_url = base_url + keywords_str
-
-    init_url = query_url + "&pn=0&rn=30"
-    proxies = None
-    headers = {
-        'Accept-Language': 'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:90.0) Gecko/20100101 Firefox/90.0',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
-    }
-
-    response = requests.get(init_url, proxies=proxies, headers=headers)
-    data = json.loads(response.text)
-    # 全部图片数量
-    total_num = data['listNum']
-    print("目标网站搜索结果为:{}".format(total_num ))
-    crawl_num = min(max_number, total_num)
-    image_urls = list()
-    i = 0
-    for init_json in data["data"]:
-        if i > crawl_num:
-           break
-        url = decode_url(init_json['objURL'])
-        # 宽图
-        if image_type=="width" and init_json['width'] > init_json['height']:
-           image_urls.append(url)
-        # 高图
-        elif image_type=="height" and init_json['height'] > init_json['width']:
-           image_urls.append(url) 
-        i=i+1
-    return image_urls
-
-
-def baidu_get_image_url(keywords, max_number=10000, use_proxy=None):
-    """
-    获取百度图片urls
-    :param keywords: 关键词
-    :param max_number: 获取图片数量
-    :param use_proxy: 是否使用代理
-    :return:
-    """
-    def decode_url(url):
-        in_table = '0123456789abcdefghijklmnopqrstuvw'
-        out_table = '7dgjmoru140852vsnkheb963wtqplifca'
-        translate_table = str.maketrans(in_table, out_table)
-        mapping = {'_z2C$q': ':', '_z&e3B': '.', 'AzdH3F': '/'}
-        for k, v in mapping.items():
-            url = url.replace(k, v)
-        return url.translate(translate_table)
-
-    base_url = "https://image.baidu.com/search/acjson?tn=resultjson_com&ipn=rj&ct=201326592" \
-               "&lm=7&fp=result&ie=utf-8&oe=utf-8&st=-1&face=0"
-    keywords_str = "&word={}&queryWord={}".format(
-        quote(keywords), quote(keywords))
-    query_url = base_url + keywords_str
-
-    init_url = query_url + "&pn=0&rn=30"
+    init_url = query_url + f"&pn=0&rn={max_number}"
+    print(f"百度地址:{query_url}")
+    
     proxies = None
     # if use_proxy:
     #     proxies = {"http": "{}://{}".format(proxy_type, proxy),
@@ -106,7 +58,54 @@ def baidu_get_image_url(keywords, max_number=10000, use_proxy=None):
     }
 
     response = requests.get(init_url, proxies=proxies, headers=headers)
-    init_json = json.loads(response.text)
+    images = re.findall("(?<=\"thumbURL\":\")[\\S\\s]+?(?=\")", response.text)
+
+    return images
+
+def baidu_get_image_url(data, max_number=10000, use_proxy=None):
+    """
+    获取百度图片urls
+    :param keywords: 关键词
+    :param max_number: 获取图片数量
+    :param use_proxy: 是否使用代理
+    :return:
+    """
+    def decode_url(url):
+        in_table = '0123456789abcdefghijklmnopqrstuvw'
+        out_table = '7dgjmoru140852vsnkheb963wtqplifca'
+        translate_table = str.maketrans(in_table, out_table)
+        mapping = {'_z2C$q': ':', '_z&e3B': '.', 'AzdH3F': '/'}
+        for k, v in mapping.items():
+            url = url.replace(k, v)
+        return url.translate(translate_table)
+
+    keywords = data["query"]
+    width = data["width"]
+    height = data["height"]
+
+    base_url = f"https://image.baidu.com/search/acjson?tn=resultjson_com&ipn=rj&ct=201326592" \
+               f"&lm=7&fp=result&ie=utf-8&oe=utf-8&st=-1&face=0&width={width}&height={height}"
+    keywords_str = "&word={}&queryWord={}".format(
+        quote(keywords), quote(keywords))
+    query_url = base_url + keywords_str
+    init_url = query_url + "&pn=0&rn=30"
+    print(f"百度地址:{query_url}")
+    
+    proxies = None
+    # if use_proxy:
+    #     proxies = {"http": "{}://{}".format(proxy_type, proxy),
+    #                "https": "{}://{}".format(proxy_type, proxy)}
+
+    headers = {
+        'Accept-Language': 'zh-CN,zh;q=0.8,zh-TW;q=0.7,zh-HK;q=0.5,en-US;q=0.3,en;q=0.2',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:90.0) Gecko/20100101 Firefox/90.0',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+    }
+
+    response = requests.get(init_url, proxies=proxies, headers=headers)
+    text = re.sub(r"\n|\t|\r|\r\n|\n\r|\x08|\\", "", response.text)
+    init_json = json.loads(text)
     # 全部图片数量
     total_num = init_json['listNum']
     print("目标网站搜索结果为:{}".format(total_num ))
@@ -134,9 +133,12 @@ def baidu_get_image_url(keywords, max_number=10000, use_proxy=None):
                         print(e)
                         return image_urls
             response.encoding = 'utf-8'
-            res_json = json.loads(response.text)
+            text = re.sub(r"\n|\t|\r|\r\n|\n\r|\x08|\\", "", response.text)
+            res_json = json.loads(text)
             for data in res_json['data']:
-                if 'objURL' in data.keys():
+                if 'thumbURL' in data.keys():
+                    image_urls.append(data['thumbURL'])
+                elif 'objURL' in data.keys():
                     image_urls.append(decode_url(data['objURL']))
                 elif 'replaceUrl' in data.keys() and len(data['replaceUrl']) == 2:
                     image_urls.append(data['replaceUrl'][1]['ObjURL'])
