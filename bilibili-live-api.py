@@ -48,6 +48,7 @@ sched1 = AsyncIOScheduler(timezone="Asia/Shanghai")
 #设置控制台日志
 today = datetime.date.today().strftime("%Y-%m-%d")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(filename)s %(name)s %(message)s',handlers=[logging.StreamHandler(),logging.FileHandler(f"./logs/log_{today}.txt")])
+# 定时器只输出error
 my_logging = logging.getLogger("apscheduler.executors.default")
 my_logging.setLevel('ERROR')
 # 重定向print输出到日志文件
