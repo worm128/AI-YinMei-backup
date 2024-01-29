@@ -12,7 +12,8 @@ LLaMA-Factory/saves/ChatGLM2-6B-Chat/lora
 LLaMA-Factory/data
 *logs/
 *data/
-output/
+output/*.wav
+output/*.mp3
 *.wav
 porn/*.png
 porn/*.jpg
