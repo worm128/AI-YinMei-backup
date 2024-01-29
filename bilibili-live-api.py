@@ -508,7 +508,7 @@ def baidu_search_img(query):
     count = len(images)
     print(f"搜图《{query}》数量：{count}")
     if count>0:
-        random_number = random.randrange(0, count-1)
+        random_number = random.randrange(0, count)
         return images[random_number]
     return
 

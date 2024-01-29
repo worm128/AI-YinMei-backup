@@ -2,6 +2,7 @@ import glob
 import os
 import re
 import chardet
+import random
 from urllib import parse
 
 # song_name="Kiss Me Goodbye [Originally Performed by Angela Aki]"
@@ -41,8 +42,11 @@ def is_index_contain_string(string_array, target_string):
             return num + len(s)
     return 0
 
-text = ["唱一下", "唱一首", "唱歌", "唱"]
-num = is_index_contain_string(text, "又是这个高端歌，吟美唱死")
-print(num)
+# text = ["唱一下", "唱一首", "唱歌", "唱"]
+# num = is_index_contain_string(text, "又是这个高端歌，吟美唱死")
+# print(num)
 # text=parse.quote("你好")
 # print(text)
+
+random_number = random.randrange(0, 2)
+print(random_number)
