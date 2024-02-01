@@ -135,7 +135,7 @@ is_creating_song = 2  # 1.生成中 2.生成完毕
 # b站直播身份验证：
 #实例化 Credential 类
 cred = Credential(
-    sessdata="4cabb314%2C1721954005%2C8589e%2A12CjBZyjXga6HMJBU70wJdyxzZrp-oTKqi9dXhC7CAWF-Xar_Lw1YpoHjr07WJIFM0bu4SVmhEOWwxZkJRZl93X0NudmFSSFlvZWhXeHZVLVV2YzV3RHpjQllqZVpIWE1UY3hmbVA1dFlmcW9LdmMzUDkwMGlrbXVFYU9lbHBsX0s3cENTVkQwLUJnIIEC",
+    sessdata="4b777272%2C1722257779%2C0502b%2A12CjA_WdVqNpe6q5oPYJmUZPYFXfB1AoXI2pY69kjiKTdUMKTopLZjgd5k2l8xsyQ2d00SVldiNzE1elhOQlp2QmNZQkhDZmlmRUFqZGFJTXUtd01ybjV5cHNtd05TaGptWE9PUFdyM21UcU45RWNKdTFKaGtyRkhKVlNkNi1sMGR6Nmk1TkZZVExRIIEC",
     buvid3="C08180D1-DDCD-1766-0162-FB77DF0BDAE597566infoc",
 )
 room_id = int(input("输入你的B站直播间编号: ") or "31814714")  # 输入直播间编号
@@ -164,7 +164,7 @@ ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
 filterEn="huge breasts,open clothes,topless,voluptuous,breast,prostitution,erotic,armpit,milk,leaking,spraying,woman,cupless latex,latex,tits,boobs,lingerie,chest,seductive,poses,pose,leg,posture,alluring,milf,on bed,mature,slime,open leg,full body,bra,lace,bikini,full nude,nude,bare,one-piece,navel,cleavage,swimsuit,naked,adult,nudity,beautiful breasts,nipples,sex,Sexual,vaginal,penis,large penis,pantie,leotards,anal"
 filterCh="屁股,奶子,乳房,乳胶,劈叉,走光,女优,男优,嫖娼,淫荡,性感,性爱,做爱,裸体,赤裸,肛门"
 progress_limit=10   #绘图大于多少百分比进行鉴黄
-nsfw_limit=0.4  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
+nsfw_limit=0.32  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
 nsfw_lock = threading.Lock()
 # ============================================
 
@@ -488,7 +488,7 @@ def web_search_img(query):
                 max_results=imageNum,
             )
             i = 0
-            random_number = random.randrange(1, imageNum)
+            random_number = random.randrange(0, imageNum)
             for r in ddgs_images_gen:
                 if i == random_number:
                     imgUrl = r["image"]
@@ -1189,7 +1189,7 @@ def draw_prompt(query,offset,limit):
         prompt=query
         negativePrompt=""
         if count>0:
-            num = random.randrange(1, count)
+            num = random.randrange(0, count)
             prompt = filter(hits[num]["meta"]["prompt"],filterEn)
             if has_field(hits[num]["meta"],"negativePrompt"):
                 negativePrompt = hits[num]["meta"]["negativePrompt"]
