@@ -51,12 +51,15 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(file
 # 定时器只输出error
 my_logging = logging.getLogger("apscheduler.executors.default")
 my_logging.setLevel('ERROR')
+#关闭页面访问日志
+my_logging = logging.getLogger("werkzeug")
+my_logging.setLevel('ERROR')
 # 重定向print输出到日志文件
 def print(*args, **kwargs):
     logging.info(*args, **kwargs)
 
 #1.b站直播间 2.api web 3.双开
-mode=int(input("1.b站直播间 2.api web 3.双开: ") or "2")
+mode=int(input("1.b站直播间 2.api web：") or "2")
 
 #代理
 proxies = {"http": "socks5://127.0.0.1:10806", "https": "socks5://127.0.0.1:10806"}
@@ -144,10 +147,7 @@ room = live.LiveDanmaku(room_id, credential=cred)  # 连接弹幕服务器
 
 # ============= api web =====================
 app = Flask(__name__,template_folder='./html')
-#关闭页面日志
-my_logging = logging.getLogger("werkzeug")
-my_logging.setLevel('ERROR')
-if mode==1 or mode==2 or mode==3:
+if mode==1 or mode==2:
    sched1 = APScheduler()
    sched1.init_app(app)
 # ============================================
@@ -389,7 +389,7 @@ def aiResponseTry():
         ai_response()
     except Exception as e:
         print(f"【ai_response】发生了异常：{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
         is_ai_ready=True
 
 # LLM回复
@@ -466,7 +466,7 @@ def web_search(query):
                 content = content + r["body"]
         except Exception as e: 
             print(f"web_search信息回复异常{e}")
-            traceback.print_exc()
+            logging.error(traceback.format_exc())
     return content
 
 
@@ -497,7 +497,7 @@ def web_search_img(query):
                 i = i + 1
         except Exception as e: 
             print(f"web_search_img信息回复异常{e}")
-            traceback.print_exc()
+            logging.error(traceback.format_exc())
     return imgUrl
 
 # 百度搜图
@@ -554,7 +554,7 @@ def searchimg_output_camera(img_search_json):
         return 0
     except Exception as e:
         print(f"【searchimg_output_camera】发生了异常：{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
         return 0
 
 
@@ -575,7 +575,7 @@ def output_img_thead(img_search_json):
             tts_say(f"回复{username}：搜索图片《{prompt}》失败")
     except Exception as e:
         print(f"【output_img_thead】发生了异常：{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
     finally:
         print(f"‘{username}’搜图《{prompt}》结束")
 
@@ -619,7 +619,7 @@ def nsfw_fun(imgb64,prompt,username,retryCount,tip,nsfw_limit):
         nsfwJson = nsfw_deal(imgb64)
     except Exception as e:
         print(f"《{prompt}》【nsfw】鉴黄{tip}发生了异常：{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
         return -1
     finally:
         nsfw_lock.release()
@@ -650,7 +650,7 @@ def nsfw_fun(imgb64,prompt,username,retryCount,tip,nsfw_limit):
         return -1
     except Exception as e:
         print(f"《{prompt}》【nsfw】鉴黄{tip}发生了异常：{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
         return -1
     #========================================================
 
@@ -696,7 +696,7 @@ def tts_say(text):
         tts_say_do(text)
     except Exception as e:
         print(f"【tts_say】发生了异常：{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
     finally:
         say_lock.release()
 
@@ -955,7 +955,7 @@ def singTry(songname, username):
            sing(songname, username)
     except Exception as e:
         print(f"【singTry】发生了异常：{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
         is_singing = 2
         is_creating_song=2
 
@@ -1114,7 +1114,7 @@ def translate(text):
             return r
         except Exception as e: 
             print(f"translate信息回复异常{e}")
-            traceback.print_exc()
+            logging.error(traceback.format_exc())
         return text
 
 # 抽取固定扩展提示词：limit:限制条数  num:抽取次数
@@ -1207,7 +1207,7 @@ def draw_prompt(query,offset,limit):
             return jsonStr
     except Exception as e:
         print(f"draw_prompt信息回复异常{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
         return ""
     return ""
 
@@ -1360,7 +1360,7 @@ def draw(prompt, username):
         tts_say(outputTxt)
     except Exception as e:
         print(f"【draw】发生了异常：{e}")
-        traceback.print_exc()
+        logging.error(traceback.format_exc())
     finally:
         is_drawing = 3
 
@@ -1392,7 +1392,7 @@ def progress(prompt, username):
                             continue
                 except Exception as e:
                     print(f"【鉴黄】发生了异常：{e}")
-                    traceback.print_exc()
+                    logging.error(traceback.format_exc())
                     continue
                 #========================================================
                 # 读取二进制字节流
@@ -1410,6 +1410,7 @@ def progress(prompt, username):
             print(f"《{prompt}》输出进度：100%")
             break    
 
+# 鉴黄提示图片输出
 def nsfw_stop_image():
     # 读取二进制字节流
     img = Image.open("./images/黄图.jpg")
@@ -1422,8 +1423,8 @@ def nsfw_stop_image():
     # 虚拟摄像头输出
     CameraOutList.put(image)
 
+# 鉴黄
 def nsfw_deal(imgb64):
-    # 鉴黄
     headers = {"Content-Type": "application/json"}
     data={"image_loader":"yahoo","model_weights":"data/open_nsfw-weights.npy","input_type":"BASE64_JPEG","input_image":imgb64}
     nsfw = requests.post(url=f"http://192.168.2.198:1801/input", headers=headers, json=data, verify=False, timeout=60)
@@ -1447,26 +1448,12 @@ def main():
     # ws服务心跳包
     run_forever_thread = Thread(target=run_forever)
     run_forever_thread.start()
+
     # 唤起虚拟摄像头
     outCamera_thread = Thread(target=outCamera)
     outCamera_thread.start()
-    # if mode==1 or mode==2 or mode==3:
-    #     # LLM回复
-    #     sched1.add_job(check_answer, "interval", seconds=1, id=f"answer", max_instances=4)
-    #     # tts语音合成
-    #     sched1.add_job(check_tts, "interval", seconds=1, id=f"tts", max_instances=4)
-    #     # MPV播放
-    #     sched1.add_job(check_mpv, "interval", seconds=1, id=f"mpv", max_instances=4)
-    #     # 绘画
-    #     sched1.add_job(check_draw, "interval", seconds=1, id=f"draw", max_instances=4)
-    #     # 搜图
-    #     sched1.add_job(check_img_search, "interval", seconds=1, id=f"img_search", max_instances=4)
-    #     # 搜文
-    #     sched1.add_job(check_text_search, "interval", seconds=1, id=f"text_search", max_instances=4)
-    #     # 唱歌
-    #     sched1.add_job(check_sing, "interval", seconds=1, id=f"sing", max_instances=4)
-    #     sched1.start()
-    if mode==1 or mode==2 or mode==3:
+
+    if mode==1 or mode==2:
         # LLM回复
         sched1.add_job(func=check_answer, trigger="interval", seconds=1, id=f"answer", max_instances=4)
         # tts语音合成
@@ -1481,7 +1468,7 @@ def main():
         sched1.add_job(func=check_sing, trigger="interval", seconds=1, id=f"sing", max_instances=4)
         sched1.start()
     
-    if mode==1 or mode==2 or mode==3:
+    if mode==1 or mode==2:
         # 开启web
         app_thread = Thread(target=apprun)
         app_thread.start()

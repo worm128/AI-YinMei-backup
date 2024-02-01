@@ -6,7 +6,9 @@
 - B 站频道：程序猿的退休生活
 - Q 群：27831318
 - 版本：1.0
-- 详细笔记：https://note.youdao.com/s/1k0x7BLt
+- 详细笔记：
+  现在发现有道云笔记网页版本不能查看笔记图片，需要完整教案请进入 Q 群 27831318 获取 pdf 文档<br>
+  https://note.youdao.com/s/1k0x7BLt<br>
 
 ## **介绍**
 
@@ -18,7 +20,8 @@
 - 支持表情控制 Vtuber Studio
 - 支持绘画 stable-diffusion-webui 输出 OBS 直播间
 - 支持绘画图片鉴黄 public-NSFW-y-distinguish
-- 支持搜索和搜图服务 duckduckgo
+- 支持搜索和搜图服务 duckduckgo（需要魔法上网）
+- 支持搜图服务 baidu 搜图（不需要魔法上网）
 
 ### 运行环境
 
