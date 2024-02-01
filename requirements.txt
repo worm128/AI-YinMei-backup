@@ -10,3 +10,6 @@ Pillow
 simplejson
 websocket-client
 flask
+flask_apscheduler
+peft
+crawler
