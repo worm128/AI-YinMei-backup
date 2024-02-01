@@ -158,6 +158,9 @@ def run_forever():
 def on_open(ws):
     auth()
 ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
+vtuber_pluginName="Cheers Bot"
+vtuber_pluginDeveloper="winlone"
+vtuber_authenticationToken="7dc9bb48d9efdfc88c6f49e1a2fdd51fa3a396681fb882b59e373428cea32413"
 # ============================================
 
 # ============= 鉴黄 =====================
@@ -1498,9 +1501,9 @@ def auth():
         "requestID": "SomeID",
         "messageType": "AuthenticationRequest",
         "data": {
-            "pluginName": "Cheers Bot",
-            "pluginDeveloper": "winlone",
-            "authenticationToken": "7dc9bb48d9efdfc88c6f49e1a2fdd51fa3a396681fb882b59e373428cea32413"
+            "pluginName": vtuber_pluginName,
+            "pluginDeveloper": vtuber_pluginDeveloper,
+            "authenticationToken": vtuber_authenticationToken
         }
     }
     data=json.dumps(authstr)

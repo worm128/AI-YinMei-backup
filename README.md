@@ -64,7 +64,12 @@ python bilibili-live-api.py
 #### 修改内容须知：
 
 B 站直播间鉴权（B 站浏览器获取 cookie）：sessdata、buvid3<br>
-Vtuber Studio 表情 ws 地址：ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)<br>
+Vtuber Studio 表情 websocket 服务： <br>
+ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)<br>
+以下是表情鉴权，详细看文档【十三、Vtuber 表情控制-获取令牌和授权】：<br>
+vtuber_pluginName="自定义插件名称"<br>
+vtuber_pluginDeveloper="winlone"<br>
+vtuber_authenticationToken="这个令牌从获取令牌接口获取"<br>
 唱歌服务 Auto-Convert-Music 地址：singUrl = "192.168.2.58:1717"<br>
 绘画服务 stable-diffusion-webui 地址：drawUrl = "192.168.2.58:7860"<br>
 聊天服务 text-generation-webui 地址：tgwUrl = "192.168.2.58:5000"<br>
