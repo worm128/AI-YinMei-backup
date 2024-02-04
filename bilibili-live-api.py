@@ -130,6 +130,7 @@ is_SearchText = 2  # 1.搜文中 2.搜文完成
 # ============= 唱歌参数 =====================
 singUrl = "192.168.2.58:1717"
 SongQueueList = queue.Queue()  # 唱歌队列
+SongMenuList = queue.Queue()  # 唱歌显示
 is_singing = 2  # 1.唱歌中 2.唱歌完成
 is_creating_song = 2  # 1.生成中 2.生成完毕
 # ============================================
@@ -138,7 +139,7 @@ is_creating_song = 2  # 1.生成中 2.生成完毕
 # b站直播身份验证：
 #实例化 Credential 类
 cred = Credential(
-    sessdata="4b777272%2C1722257779%2C0502b%2A12CjA_WdVqNpe6q5oPYJmUZPYFXfB1AoXI2pY69kjiKTdUMKTopLZjgd5k2l8xsyQ2d00SVldiNzE1elhOQlp2QmNZQkhDZmlmRUFqZGFJTXUtd01ybjV5cHNtd05TaGptWE9PUFdyM21UcU45RWNKdTFKaGtyRkhKVlNkNi1sMGR6Nmk1TkZZVExRIIEC",
+    sessdata="29f65a04%2C1722589393%2Ce3ae4%2A22CjA1mYmktCbLIRPnripd5LJlvKE6e-7ODlx5En4voB_dl-4rPzypw1Z2CXrVzOl8WAMSVjdXM1VzU0F0cWxnSVhPdEc2X2dQMTlRcG1mMmQtRDRKVUhZVy14TTEwbXZxM1ZzNGhQYl8wYTZOWC1MTnJ6NjJ0eXBxXzUyVXJfajZraFRMRXcwbGtRIIEC",
     buvid3="C08180D1-DDCD-1766-0162-FB77DF0BDAE597566infoc",
 )
 room_id = int(input("输入你的B站直播间编号: ") or "31814714")  # 输入直播间编号
@@ -227,10 +228,15 @@ def chatreply():
 # 点播歌曲列表
 @app.route("/songlist", methods=["GET"])
 def songlist():
-    jsonstr ={}
-    for songname in list(SongQueueList):
-        jsonstr.append({"songname":songname})
-    return jsonstr
+    global SongMenuList
+    jsonstr =[]
+    CallBackForTest=request.args.get('CallBack')
+    for i in range(SongMenuList.qsize()):
+        jsonstr.append({"songname":SongMenuList.queue[i]})
+    str = "({\"status\": \"成功\",\"content\": "+json.dumps(jsonstr)+"})"
+    if CallBackForTest is not None:
+       temp = CallBackForTest+str
+    return temp
 
 def msg_deal(query,user_name):
     """
@@ -963,6 +969,7 @@ def singTry(songname, username):
 def sing(songname, username):
     global is_singing
     global is_creating_song
+    global SongMenuList
     is_created = 0  # 1.已经生成过 0.没有生成过 2.生成失败
     
     query = songname # 查询内容
@@ -1013,11 +1020,13 @@ def sing(songname, username):
 
     #等待播放
     print(f"等待播放{username}点播的歌曲《{songname}》：{is_singing}")
+    SongMenuList.put(f"'{username}'点播《{songname}》")
     while is_singing == 1:
         time.sleep(1)
     # =============== 开始：播放歌曲 =================
     play_song(is_created,songname,song_path,username,query)
-    # =============== 结束：播放歌曲 =================   
+    # =============== 结束：播放歌曲 =================
+    SongMenuList.get()
 
 #开始生成歌曲
 def create_song(songname,song_path,is_created,downfile):
@@ -1075,7 +1084,7 @@ def play_song(is_created,songname,song_path,username,query):
             # 播报唱歌文字
             tts_say(f"回复{username}：我准备唱一首歌《{songname}》")
             # 调用mpv播放器
-            mpv_play(song_path,60)
+            mpv_play(song_path,80)
         else:
             tip=f"已经跳过歌曲《{songname}》，请稍后再点播"
             print(tip)

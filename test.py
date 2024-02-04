@@ -3,6 +3,7 @@ import os
 import re
 import chardet
 import random
+import queue
 from urllib import parse
 
 # song_name="Kiss Me Goodbye [Originally Performed by Angela Aki]"
@@ -48,5 +49,18 @@ def is_index_contain_string(string_array, target_string):
 # text=parse.quote("你好")
 # print(text)
 
-random_number = random.randrange(0, 2)
-print(random_number)
+# random_number = random.randrange(0, 2)
+# print(random_number)
+
+jsonstr =[]
+SongQueueList = queue.Queue()
+SongQueueList.put("ab")
+SongQueueList.put("b")
+SongQueueList.put("x")
+SongQueueList.put("d")
+
+for i in range(SongQueueList.qsize()):
+    print(SongQueueList.queue[i])
+    jsonstr.append({"songname":SongQueueList.queue[i]})
+print(jsonstr)
+print(SongQueueList.queue)
