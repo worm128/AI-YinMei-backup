@@ -131,6 +131,7 @@ is_SearchText = 2  # 1.搜文中 2.搜文完成
 singUrl = "192.168.2.58:1717"
 SongQueueList = queue.Queue()  # 唱歌队列
 SongMenuList = queue.Queue()  # 唱歌显示
+SongNowName="" # 当前歌曲
 is_singing = 2  # 1.唱歌中 2.唱歌完成
 is_creating_song = 2  # 1.生成中 2.生成完毕
 # ============================================
@@ -230,8 +231,15 @@ def chatreply():
 @app.route("/songlist", methods=["GET"])
 def songlist():
     global SongMenuList
+    global SongNowName
     jsonstr =[]
     CallBackForTest=request.args.get('CallBack')
+    #当前歌曲
+    username=SongNowName["username"]
+    songname=SongNowName["songname"]
+    text = f"'{username}'点播《{songname}》"
+    jsonstr.append({"songname":text})
+    #播放歌曲清单
     for i in range(SongMenuList.qsize()):
         data = SongMenuList.queue[i]
         username=data["username"]
@@ -1030,11 +1038,13 @@ def sing(songname, username):
 # 播放歌曲清单
 def check_playSongMenuList():
     global is_singing
+    global SongNowName
     if not SongMenuList.empty() and is_singing == 2:
         # =============== 开始：播放歌曲 =================
-        mlist = SongMenuList.queue[0]
+        mlist = SongMenuList.get() #取出歌单播放
+        SongNowName = mlist  #赋值当前歌曲名称
+        #播放歌曲
         play_song(mlist["is_created"],mlist["songname"],mlist["song_path"],mlist["username"],mlist["query"])
-        SongMenuList.get()
         # =============== 结束：播放歌曲 =================
 
 #开始生成歌曲
@@ -1118,7 +1128,7 @@ def check_down_song(songname):
     for filename in convertfail:
         if songname == filename:
             is_created = 2
-            return downfile, is_created
+            return None, is_created
 
     # 优先：精确匹配文件名
     for filename in converted_file:
