@@ -8,7 +8,7 @@ opencv-python
 numpy
 Pillow
 simplejson
-websocket-client
+websocket-client==1.7.0
 flask
 flask_apscheduler
 peft

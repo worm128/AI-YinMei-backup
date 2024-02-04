@@ -1,4 +1,4 @@
-from websocket import create_connection
+# vtuber studio 表情websocket
 import json
 from threading import Thread
 from flask import Flask, jsonify, request
@@ -6,7 +6,13 @@ import websocket
 
 app = Flask(__name__)
 
-ws = websocket.WebSocketApp("ws://127.0.0.1:8001")
+def run_forever():
+    ws.run_forever(ping_timeout=1)
+
+def on_open(ws):
+    auth()   
+
+ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
 
 
 def auth():
@@ -48,14 +54,11 @@ def emote_ws(text):
     data=json.dumps(jstr)
     ws.send(data)
 
-def run_forever():
-    ws.run_forever(ping_timeout=5)
-    
+
 
 if __name__ == "__main__":
     init_thread = Thread(target=run_forever)
     init_thread.start()
-    auth()
     # 开始监听弹幕流
     app.run(host="0.0.0.0", port=1800)
     

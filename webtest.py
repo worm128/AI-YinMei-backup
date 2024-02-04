@@ -4,7 +4,7 @@ app = Flask(__name__)
 
 content=1
 # 聊天回复弹框处理
-@app.route("/chatreplytest", methods=["GET"])
+@app.route("/chatreply", methods=["GET"])
 def chatreply():
     global content
     CallBackForTest=request.args.get('CallBack')

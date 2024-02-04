@@ -36,13 +36,13 @@
 		<script type="text/javascript">
 			function typewriter(text) {
 				var i = 0; // 当前要显示的字符索引
-
 				var colors = ["#b91919", "#2c2cff", "#02c01b","#ffa724","#ff2476","#00BFFF","#9932CC","#C71585","#DC143C","#FF7F50"];
 				var randomNumber = Math.floor(Math.random() * colors.length)
-				$("#content").last().append("<div class=\"area\" style=\"background-color:"+colors[randomNumber]+"\"></div>")
+				var timestamp = new Date().getTime();
+				$("#content").last().append("<div class=\"area "+timestamp+"\" style=\"background-color:"+colors[randomNumber]+"\"></div>")
 				function showChar() {
 					if (i < text.length) {
-						$("#content div").last().append(text[i]);
+						$("#content div.area."+timestamp).append(text[i]);
 						//滚动到底部
 						$("#chat").scrollTop($("#content").height());
 						i++; // 更新索引值
@@ -78,7 +78,7 @@
                     }
                 });
 			}
-			// 每隔2000毫秒（2秒）输出"Hello World!"到控制台
+			// 每隔1000毫秒（1秒）
 			setInterval(function(){
 				refreshPage();
 			}, 1000);

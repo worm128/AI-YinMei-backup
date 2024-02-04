@@ -158,15 +158,15 @@ def run_forever():
 def on_open(ws):
     auth()
 ws = websocket.WebSocketApp("ws://127.0.0.1:8001",on_open = on_open)
-vtuber_pluginName="Cheers Bot"
+vtuber_pluginName="winlonebot"
 vtuber_pluginDeveloper="winlone"
-vtuber_authenticationToken="7dc9bb48d9efdfc88c6f49e1a2fdd51fa3a396681fb882b59e373428cea32413"
+vtuber_authenticationToken="4ae2f64ec9d1fe7bddc1b2edfb96292b28ab8b83554b50270a7fe83b3b3b8d05"
 # ============================================
 
 # ============= 鉴黄 =====================
 filterEn="huge breasts,open clothes,topless,voluptuous,breast,prostitution,erotic,armpit,milk,leaking,spraying,woman,cupless latex,latex,tits,boobs,lingerie,chest,seductive,poses,pose,leg,posture,alluring,milf,on bed,mature,slime,open leg,full body,bra,lace,bikini,full nude,nude,bare,one-piece,navel,cleavage,swimsuit,naked,adult,nudity,beautiful breasts,nipples,sex,Sexual,vaginal,penis,large penis,pantie,leotards,anal"
 filterCh="屁股,奶子,乳房,乳胶,劈叉,走光,女优,男优,嫖娼,淫荡,性感,性爱,做爱,裸体,赤裸,肛门"
-progress_limit=10   #绘图大于多少百分比进行鉴黄
+progress_limit=1   #绘图大于多少百分比进行鉴黄
 nsfw_limit=0.32  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
 nsfw_lock = threading.Lock()
 # ============================================
@@ -209,12 +209,10 @@ def input_msg():
     msg_deal(query,user_name)
     return jsonify({"status": "成功"})
 
-chatreply_lock = threading.Lock()
 # 聊天回复弹框处理
 @app.route("/chatreply", methods=["GET"])
 def chatreply():
     global ReplyTextList
-    chatreply_lock.acquire()
     CallBackForTest=request.args.get('CallBack')
     text=""
     status="失败"
@@ -224,7 +222,6 @@ def chatreply():
     str = "({\"status\": \""+status+"\",\"content\": \""+text+"\"})"
     if CallBackForTest is not None:
         str=CallBackForTest+str
-    chatreply_lock.release()
     return str
 
 # 点播歌曲列表
@@ -972,6 +969,12 @@ def sing(songname, username):
     # =============== 开始-获取真实歌曲名称 =================
     musicJson = requests.get(url=f"http://{singUrl}/musicInfo/{songname}")
     music_json = json.loads(musicJson.text)
+    id = music_json["id"]
+    if id==0:
+        outputTxt=f"歌库不存在《{songname}》这首歌曲哦"
+        print(outputTxt)
+        tts_say(outputTxt)
+        return 
     songname = music_json["songName"]
     song_path = f"./output/{songname}.wav"
     # =============== 结束-获取真实歌曲名称 =================
