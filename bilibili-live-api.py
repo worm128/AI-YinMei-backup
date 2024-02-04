@@ -169,6 +169,7 @@ filterEn="huge breasts,open clothes,topless,voluptuous,breast,prostitution,eroti
 filterCh="屁股,奶子,乳房,乳胶,劈叉,走光,女优,男优,嫖娼,淫荡,性感,性爱,做爱,裸体,赤裸,肛门"
 progress_limit=1   #绘图大于多少百分比进行鉴黄
 nsfw_limit=0.32  #nsfw黄图值大于多少进行绘画屏蔽，值越大越是黄图
+nsfw_progress_limit=0.2 #nsfw黄图-绘画进度鉴黄
 nsfw_lock = threading.Lock()
 # ============================================
 
@@ -552,7 +553,7 @@ def searchimg_output_camera(img_search_json):
         prompt = img_search_json["prompt"]
         username = img_search_json["username"]
         # 百度搜图
-        imgUrl = baidu_search_img("歌曲"+prompt)
+        imgUrl = baidu_search_img(prompt)
         img_search_json2 = {"prompt": prompt, "username": username, "imgUrl": imgUrl}
         print(f"搜图内容:{img_search_json2}")
         if imgUrl is not None:
@@ -1404,7 +1405,7 @@ def progress(prompt, username):
                 #===============鉴黄, 大于**%进度进行鉴黄====================
                 try:
                     if p>progress_limit:
-                        status = nsfw_fun(imgb64,prompt,username,1,"绘画进度",nsfw_limit)
+                        status = nsfw_fun(imgb64,prompt,username,1,"绘画进度",nsfw_progress_limit)
                         #异常鉴黄
                         if status==-1:
                             print(f"《{prompt}》进度{p}%鉴黄失败，图片不明确跳出")

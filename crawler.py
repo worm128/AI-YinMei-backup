@@ -39,7 +39,7 @@ def baidu_get_image_url_regx(data, max_number=10000, use_proxy=None):
 
     base_url = f"https://image.baidu.com/search/acjson?tn=resultjson_com&ipn=rj&ct=201326592" \
                f"&lm=7&fp=result&ie=utf-8&oe=utf-8&st=-1&face=0&width={width}&height={height}"
-    keywords_str = "&word={}&queryWord={}".format(
+    keywords_str = "&word={}".format(
         quote(keywords), quote(keywords))
     query_url = base_url + keywords_str
     init_url = query_url + f"&pn=0&rn={max_number}"
