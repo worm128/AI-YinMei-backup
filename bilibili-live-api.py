@@ -232,7 +232,11 @@ def songlist():
     jsonstr =[]
     CallBackForTest=request.args.get('CallBack')
     for i in range(SongMenuList.qsize()):
-        jsonstr.append({"songname":SongMenuList.queue[i]})
+        data = SongMenuList.queue[i]
+        username=data["username"]
+        songname=data["songname"]
+        text = f"'{username}'点播《{songname}》"
+        jsonstr.append({"songname":text})
     str = "({\"status\": \"成功\",\"content\": "+json.dumps(jsonstr)+"})"
     if CallBackForTest is not None:
        temp = CallBackForTest+str
@@ -1020,13 +1024,17 @@ def sing(songname, username):
 
     #等待播放
     print(f"等待播放{username}点播的歌曲《{songname}》：{is_singing}")
-    SongMenuList.put(f"'{username}'点播《{songname}》")
-    while is_singing == 1:
-        time.sleep(1)
-    # =============== 开始：播放歌曲 =================
-    play_song(is_created,songname,song_path,username,query)
-    # =============== 结束：播放歌曲 =================
-    SongMenuList.get()
+    SongMenuList.put({"username": username, "songname": songname,"is_created":is_created,"song_path":song_path,"query":query})
+
+# 播放歌曲清单
+def check_playSongMenuList():
+    global is_singing
+    if not SongMenuList.empty() and is_singing == 2:
+        # =============== 开始：播放歌曲 =================
+        mlist = SongMenuList.queue[0]
+        play_song(mlist["is_created"],mlist["songname"],mlist["song_path"],mlist["username"],mlist["query"])
+        SongMenuList.get()
+        # =============== 结束：播放歌曲 =================
 
 #开始生成歌曲
 def create_song(songname,song_path,is_created,downfile):
@@ -1470,17 +1478,19 @@ def main():
 
     if mode==1 or mode==2:
         # LLM回复
-        sched1.add_job(func=check_answer, trigger="interval", seconds=1, id=f"answer", max_instances=4)
+        sched1.add_job(func=check_answer, trigger="interval", seconds=1, id=f"answer", max_instances=10)
         # tts语音合成
-        sched1.add_job(func=check_tts, trigger="interval", seconds=1, id=f"tts", max_instances=4)
+        sched1.add_job(func=check_tts, trigger="interval", seconds=1, id=f"tts", max_instances=10)
         # MPV播放
-        sched1.add_job(func=check_mpv, trigger="interval", seconds=1, id=f"mpv", max_instances=4)
+        sched1.add_job(func=check_mpv, trigger="interval", seconds=1, id=f"mpv", max_instances=50)
         # 绘画
-        sched1.add_job(func=check_draw, trigger="interval", seconds=1, id=f"draw", max_instances=4)
+        sched1.add_job(func=check_draw, trigger="interval", seconds=1, id=f"draw", max_instances=10)
         # 搜图
-        sched1.add_job(func=check_img_search, trigger="interval", seconds=1, id=f"img_search", max_instances=4)
-        # 唱歌
-        sched1.add_job(func=check_sing, trigger="interval", seconds=1, id=f"sing", max_instances=4)
+        sched1.add_job(func=check_img_search, trigger="interval", seconds=1, id=f"img_search", max_instances=10)
+        # 唱歌转换
+        sched1.add_job(func=check_sing, trigger="interval", seconds=1, id=f"sing", max_instances=50)
+        # 歌曲清单播放
+        sched1.add_job(func=check_playSongMenuList, trigger="interval", seconds=1, id=f"playSongMenuList", max_instances=50)
         sched1.start()
     
     if mode==1 or mode==2:
