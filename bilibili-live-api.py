@@ -131,7 +131,7 @@ is_SearchText = 2  # 1.搜文中 2.搜文完成
 singUrl = "192.168.2.58:1717"
 SongQueueList = queue.Queue()  # 唱歌队列
 SongMenuList = queue.Queue()  # 唱歌显示
-SongNowName="" # 当前歌曲
+SongNowName={} # 当前歌曲
 is_singing = 2  # 1.唱歌中 2.唱歌完成
 is_creating_song = 2  # 1.生成中 2.生成完毕
 # ============================================
@@ -234,11 +234,12 @@ def songlist():
     global SongNowName
     jsonstr =[]
     CallBackForTest=request.args.get('CallBack')
-    #当前歌曲
-    username=SongNowName["username"]
-    songname=SongNowName["songname"]
-    text = f"'{username}'点播《{songname}》"
-    jsonstr.append({"songname":text})
+    if len(SongNowName)>0:
+        #当前歌曲
+        username=SongNowName["username"]
+        songname=SongNowName["songname"]
+        text = f"'{username}'点播《{songname}》"
+        jsonstr.append({"songname":text})
     #播放歌曲清单
     for i in range(SongMenuList.qsize()):
         data = SongMenuList.queue[i]
@@ -366,7 +367,7 @@ def cmd(query):
         os.system('taskkill /T /F /IM mpv.exe')
         is_singing = 2  # 1.唱歌中 2.唱歌完成
         # is_creating_song = 2  # 1.生成中 2.生成完毕
-        is_ai_ready = True  # 定义ai回复是否转换完成标志
+        # is_ai_ready = True  # 定义ai回复是否转换完成标志
         return 1
     return 0
 
@@ -418,54 +419,29 @@ def ai_response():
     :return:
     """
     global is_ai_ready
-    global is_singing
-    global is_creating_song
-    global is_SearchImg
-    global is_drawing
-    global is_tts_ready
-    global is_mpv_ready
-
     global QuestionList
-    global AnswerList
     global QuestionName
-    global LogsList
     global history
 
-    global SearchImgList
-    global DrawQueueList
-    global SongQueueList
-
-    query = QuestionList.get()
+    is_ai_ready = False
+    prompt = QuestionList.get()
     user_name = QuestionName.get()
-    ques = LogsList.get()
-    prompt = query
-    is_query = True  # 是否需要调用LLM True：需要  False：不需要
 
-    # 询问LLM
-    if is_query == True:
-        # text-generation-webui
-        if is_local_llm == 0:
-            response = chat_tgw(prompt, "Aileen Voracious", "chat", "Winlone")
-            response = response.replace("You", user_name)
-        # 本地LLM
-        elif is_local_llm == 1:
-            response, history = model.chat(tokenizer, prompt, history=[])
-
+    # text-generation-webui
+    if is_local_llm == 0:
+        response = chat_tgw(prompt, "Aileen Voracious", "chat", "Winlone")
+        response = response.replace("You", user_name)
+    # 本地LLM
+    elif is_local_llm == 1:
+        response, history = model.chat(tokenizer, prompt, history=[])
+    
+    # 回复文本
     answer = f"回复{user_name}：{response}"
     # 加入回复列表，并且后续合成语音
-    tts_say(f"{query}" + "," + answer)
-
+    tts_say(f"{prompt}" + "," + answer)
     current_question_count = QuestionList.qsize()
     print(f"\033[31m[AI回复]\033[0m{answer}")  # 打印AI回复信息
-    print(
-        f"\033[32mSystem>>\033[0m[{user_name}]的回复已存入队列，当前剩余问题数:{current_question_count}"
-    )
-
-    time2 = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open("./logs.txt", "a", encoding="utf-8") as f:  # 将问答写入logs
-        f.write(
-            f"{ques}\n[{time2}] {answer}\n========================================================\n"
-        )
+    print(f"\033[32mSystem>>\033[0m[{user_name}]的回复已存入队列，当前剩余问题数:{current_question_count}")
     is_ai_ready = True  # 指示AI已经准备好回复下一个问题
 
 
@@ -1025,6 +1001,7 @@ def sing(songname, username):
         # 其他歌曲在生成的时候等待
         while is_creating_song == 1:
             time.sleep(1)
+        # 调用Ai学唱歌服务：生成歌曲
         is_created=create_song(songname,song_path,is_created,downfile)
     if is_created==2:
         print(f"生成歌曲失败《{songname}》")
@@ -1033,6 +1010,7 @@ def sing(songname, username):
 
     #等待播放
     print(f"等待播放{username}点播的歌曲《{songname}》：{is_singing}")
+    #加入播放歌单
     SongMenuList.put({"username": username, "songname": songname,"is_created":is_created,"song_path":song_path,"query":query})
 
 # 播放歌曲清单
@@ -1040,13 +1018,18 @@ def check_playSongMenuList():
     global is_singing
     global SongNowName
     if not SongMenuList.empty() and is_singing == 2:
-        # =============== 开始：播放歌曲 =================
+        #播放歌曲
+        play_song_lock.acquire()
         mlist = SongMenuList.get() #取出歌单播放
         SongNowName = mlist  #赋值当前歌曲名称
-        #播放歌曲
+        is_singing = 1  # 开始唱歌
+        # =============== 开始：播放歌曲 =================
         play_song(mlist["is_created"],mlist["songname"],mlist["song_path"],mlist["username"],mlist["query"])
         # =============== 结束：播放歌曲 =================
-
+        is_singing = 2  # 完成唱歌
+        SongNowName = {} #当前播放歌单清空
+        play_song_lock.release()
+        
 #开始生成歌曲
 def create_song(songname,song_path,is_created,downfile):
     global is_creating_song
@@ -1086,13 +1069,10 @@ def create_song(songname,song_path,is_created,downfile):
         create_song_lock.release()
     return is_created
 
-# 播放歌曲
+# 播放歌曲 1.成功 2.没有歌曲播放 3.异常 
 def play_song(is_created,songname,song_path,username,query):
-    global is_singing
     try:
-        play_song_lock.acquire()
         # 播放歌曲
-        is_singing = 1  # 开始唱歌
         if is_created == 1:
             print(f"准备唱歌《{songname}》,播放路径:{song_path}")
             # =============== 开始-触发搜图 =================
@@ -1104,18 +1084,16 @@ def play_song(is_created,songname,song_path,username,query):
             tts_say(f"回复{username}：我准备唱一首歌《{songname}》")
             # 调用mpv播放器
             mpv_play(song_path,80)
+            return 1
         else:
             tip=f"已经跳过歌曲《{songname}》，请稍后再点播"
             print(tip)
             # 加入回复列表，并且后续合成语音
             tts_say(f"回复{username}：{tip}")
+            return 2
     except Exception as e:
         print(f"《{songname}》play_song异常{e}")
-        return 2
-    finally:
-        is_singing = 2  # 完成唱歌
-        play_song_lock.release()
-    return is_singing
+        return 3
 
 # 匹配已生成的歌曲，并返回字节流
 def check_down_song(songname):
